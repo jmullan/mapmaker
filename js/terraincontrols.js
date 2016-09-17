@@ -1,4 +1,4 @@
-var points = 800;
+var points = 4096;
 
 var defaults = {
     npts: points,
@@ -34,7 +34,10 @@ function addSVG(div) {
 function CityRender(h) {
     this.params = defaultParams;
     this.cities = [];
-    this.terr = null;
+    this.terr = [];
+    this.rivers = [];
+    this.coasts = [];
+    this.borders = [];
     this.clearCities = function () {
         this.cities = [];
     };
@@ -77,7 +80,7 @@ function primDraw() {
         drawPaths(primSVG, "coast", []);
     }
 
-
+    drawLabels(primSVG, cityRender, primZero);
 }
 
 primDraw();

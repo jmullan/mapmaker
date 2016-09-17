@@ -812,8 +812,8 @@ function visualizeContour(h, level) {
     drawPaths('coast', links);
 }
 
-function visualizeBorders(h, cities, n) {
-    var links = getBorders(h, getTerritories(h, cities, n));
+function visualizeBorders(zero, cities) {
+    var links = getBorders(getTerritories(zero, cities), zero);
     drawPaths('border', links);
 }
 
@@ -882,6 +882,11 @@ function terrCenter(h, terr, city, landOnly) {
 }
 
 function drawLabels(svg, render, zero) {
+    render.rivers = getRivers(zero, 0.01);
+    render.coasts = contour(zero, 0);
+    render.terr = getTerritories(render, zero);
+    render.borders = getBorders(render, zero);
+
     var params = render.params;
     var terr = render.terr;
     var cities = render.cities;
@@ -891,10 +896,18 @@ function drawLabels(svg, render, zero) {
     var citylabels = [];
     function penalty(label) {
         var pen = 0;
-        if (label.x0 < -0.45 * zero.mesh.extent.width) pen += 100;
-        if (label.x1 > 0.45 * zero.mesh.extent.width) pen += 100;
-        if (label.y0 < -0.45 * zero.mesh.extent.height) pen += 100;
-        if (label.y1 > 0.45 * zero.mesh.extent.height) pen += 100;
+        if (label.x0 < -0.45 * zero.mesh.extent.width) {
+            pen += 100;
+        }
+        if (label.x1 > 0.45 * zero.mesh.extent.width) {
+            pen += 100;
+        }
+        if (label.y0 < -0.45 * zero.mesh.extent.height) {
+            pen += 100;
+        }
+        if (label.y1 > 0.45 * zero.mesh.extent.height) {
+            pen += 100;
+        }
         for (var i = 0; i < citylabels.length; i++) {
             var olabel = citylabels[i];
             if (label.x0 < olabel.x1 && label.x1 > olabel.x0 &&
@@ -912,9 +925,9 @@ function drawLabels(svg, render, zero) {
         for (var i = 0; i < avoids.length; i++) {
             var avoid = avoids[i];
             for (var j = 0; j < avoid.length; j++) {
-                var avpath = avoid[j];
-                for (var k = 0; k < avpath.length; k++) {
-                    var pt = avpath[k];
+                var pathToAvoid = avoid[j];
+                for (var k = 0; k < pathToAvoid.length; k++) {
+                    var pt = pathToAvoid[k];
                     if (pt[0] > label.x0 && pt[0] < label.x1 && pt[1] > label.y0 && pt[1] < label.y1) {
                         pen++;
                     }
@@ -924,8 +937,8 @@ function drawLabels(svg, render, zero) {
         return pen;
     }
     for (var i = 0; i < cities.length; i++) {
-        var x = h.mesh.vxs[cities[i]][0];
-        var y = h.mesh.vxs[cities[i]][1];
+        var x = zero.mesh.vxs[cities[i]][0];
+        var y = zero.mesh.vxs[cities[i]][1];
         var text = makeName(lang, 'city');
         var size = i < nterrs ? params.fontsizes.city : params.fontsizes.town;
         var sx = 0.65 * size/1000 * text.length;
@@ -993,18 +1006,18 @@ function drawLabels(svg, render, zero) {
         var text = makeName(lang, 'region');
         var sy = params.fontsizes.region / 1000;
         var sx = 0.6 * text.length * sy;
-        var lc = terrCenter(h, terr, city, true);
-        var oc = terrCenter(h, terr, city, false);
+        var lc = terrCenter(zero, terr, city, true);
+        var oc = terrCenter(zero, terr, city, false);
         var best = 0;
         var bestscore = -999999;
-        for (var j = 0; j < h.length; j++) {
+        for (var j = 0; j < zero.length; j++) {
             var score = 0;
-            var v = h.mesh.vxs[j];
+            var v = zero.mesh.vxs[j];
             score -= 3000 * Math.sqrt((v[0] - lc[0]) * (v[0] - lc[0]) + (v[1] - lc[1]) * (v[1] - lc[1]));
             score -= 1000 * Math.sqrt((v[0] - oc[0]) * (v[0] - oc[0]) + (v[1] - oc[1]) * (v[1] - oc[1]));
             if (terr[j] != city) score -= 3000;
             for (var k = 0; k < cities.length; k++) {
-                var u = h.mesh.vxs[cities[k]];
+                var u = zero.mesh.vxs[cities[k]];
                 if (Math.abs(v[0] - u[0]) < sx &&
                     Math.abs(v[1] - sy/2 - u[1]) < sy) {
                     score -= k < nterrs ? 4000 : 500;
@@ -1025,11 +1038,11 @@ function drawLabels(svg, render, zero) {
                     score -= 20000;
                 }
             }
-            if (h[j] <= 0) score -= 500;
-            if (v[0] + sx/2 > 0.5 * h.mesh.extent.width) score -= 50000;
-            if (v[0] - sx/2 < -0.5 * h.mesh.extent.width) score -= 50000;
-            if (v[1] > 0.5 * h.mesh.extent.height) score -= 50000;
-            if (v[1] - sy < -0.5 * h.mesh.extent.height) score -= 50000;
+            if (zero[j] <= 0) score -= 500;
+            if (v[0] + sx/2 > 0.5 * zero.mesh.extent.width) score -= 50000;
+            if (v[0] - sx/2 < -0.5 * zero.mesh.extent.width) score -= 50000;
+            if (v[1] > 0.5 * zero.mesh.extent.height) score -= 50000;
+            if (v[1] - sy < -0.5 * zero.mesh.extent.height) score -= 50000;
             if (score > bestscore) {
                 bestscore = score;
                 best = j;
@@ -1061,8 +1074,8 @@ function drawLabels(svg, render, zero) {
 function drawMap(svg, render, zero) {
     render.rivers = getRivers(zero, 0.01);
     render.coasts = contour(zero, 0);
-    render.terr = getTerritories(render);
-    render.borders = getBorders(render);
+    render.terr = getTerritories(render, zero);
+    render.borders = getBorders(render, zero);
     drawPaths(svg, 'river', render.rivers);
     drawPaths(svg, 'coast', render.coasts);
     drawPaths(svg, 'border', render.borders);
