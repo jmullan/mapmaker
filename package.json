@@ -1,0 +1,24 @@
+{
+  "name": "mapmaker",
+  "version": "0.0.1",
+  "description": "Fictional Map Maker",
+  "main": "index.js",
+  "scripts": {
+    "test": "test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jmullan/mapmaker.git"
+  },
+  "keywords": [
+    "dnd",
+    "map",
+    "mapmaker"
+  ],
+  "author": "Jesse Mullan",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/jmullan/mapmaker/issues"
+  },
+  "homepage": "https://github.com/jmullan/mapmaker"
+}
