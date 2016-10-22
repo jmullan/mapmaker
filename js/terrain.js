@@ -90,6 +90,7 @@ function makeMesh(pts, extent) {
     var adj = [];
     var edges = [];
     var tris = [];
+    var gunks = [];
     for (var i = 0; i < vor.edges.length; i++) {
         var e = vor.edges[i];
         if (e == undefined) {
@@ -135,7 +136,8 @@ function makeMesh(pts, extent) {
         adj: adj,
         tris: tris,
         edges: edges,
-        extent: extent
+        extent: extent,
+        gunks: gunks
     }
     mesh.map = function (f) {
         var mapped = vxs.map(f);
@@ -186,7 +188,7 @@ function quantile(h, q) {
     return d3.quantile(sortedh, q);
 }
 
-function zero(mesh) {
+function flatten(mesh) {
     var z = [];
     for (var i = 0; i < mesh.vxs.length; i++) {
         z[i] = 0;
@@ -225,7 +227,7 @@ function peaky(h) {
 
 function add() {
     var n = arguments[0].length;
-    var newvals = zero(arguments[0].mesh);
+    var newvals = flatten(arguments[0].mesh);
     for (var i = 0; i < n; i++) {
         for (var j = 0; j < arguments.length; j++) {
             newvals[i] += arguments[j][i];
@@ -240,7 +242,7 @@ function mountains(mesh, n, r) {
     for (var i = 0; i < n; i++) {
         mounts.push([mesh.extent.width * (Math.random() - 0.5), mesh.extent.height * (Math.random() - 0.5)]);
     }
-    var newvals = zero(mesh);
+    var newvals = flatten(mesh);
     for (var i = 0; i < mesh.vxs.length; i++) {
         var p = mesh.vxs[i];
         for (var j = 0; j < n; j++) {
@@ -252,7 +254,7 @@ function mountains(mesh, n, r) {
 }
 
 function relax(h) {
-    var newh = zero(h.mesh);
+    var newh = flatten(h.mesh);
     for (var i = 0; i < h.length; i++) {
         var nbs = neighbours(h.mesh, i);
         if (nbs.length < 3) {
@@ -309,43 +311,10 @@ function findSinks(h) {
     }
 }
 
-function fillSinks(h, epsilon) {
-    epsilon = epsilon || 1e-5;
-    var infinity = 999999;
-    var newh = zero(h.mesh);
-    for (var i = 0; i < h.length; i++) {
-        if (isnearedge(h.mesh, i)) {
-            newh[i] = h[i];
-        } else {
-            newh[i] = infinity;
-        }
-    }
-    while (true) {
-        var changed = false;
-        for (var i = 0; i < h.length; i++) {
-            if (newh[i] == h[i]) continue;
-            var nbs = neighbours(h.mesh, i);
-            for (var j = 0; j < nbs.length; j++) {
-                if (h[i] >= newh[nbs[j]] + epsilon) {
-                    newh[i] = h[i];
-                    changed = true;
-                    break;
-                }
-                var oh = newh[nbs[j]] + epsilon;
-                if ((newh[i] > oh) && (oh > h[i])) {
-                    newh[i] = oh;
-                    changed = true;
-                }
-            }
-        }
-        if (!changed) return newh;
-    }
-}
-
 function getFlux(h) {
     var dh = downhill(h);
     var idxs = [];
-    var flux = zero(h.mesh);
+    var flux = flatten(h.mesh);
     for (var i = 0; i < h.length; i++) {
         idxs[i] = i;
         flux[i] = 1/h.length;
@@ -364,7 +333,7 @@ function getFlux(h) {
 
 function getSlope(h) {
     var dh = downhill(h);
-    var slope = zero(h.mesh);
+    var slope = flatten(h.mesh);
     for (var i = 0; i < h.length; i++) {
         var s = trislope(h, i);
         slope[i] = Math.sqrt(s[0] * s[0] + s[1] * s[1]);
@@ -381,23 +350,97 @@ function getSlope(h) {
 function erosionRate(h) {
     var flux = getFlux(h);
     var slope = getSlope(h);
-    var newh = zero(h.mesh);
+    var newh = flatten(h.mesh);
     for (var i = 0; i < h.length; i++) {
-        var river = Math.sqrt(flux[i]) * slope[i];
+        //var river = Math.sqrt(flux[i]) * slope[i];
+        var river = flux[i] * slope[i];
         var creep = slope[i] * slope[i];
         var total = 1000 * river + creep;
         total = total > 200 ? 200 : total;
+        if (h[i] < 0) {
+            total /= -h[1];
+        } else if (h[i] > 0) {
+            total /= h[i];
+        }
         newh[i] = total;
     }
     return newh;
 }
 
+function fillSinks(h, epsilon) {
+    epsilon = epsilon || 1e-5;
+    var infinity = 999999;
+    var newh = flatten(h.mesh);
+    for (var i = 0; i < h.length; i++) {
+        if (isnearedge(h.mesh, i)) {
+            newh[i] = h[i];
+        } else {
+            newh[i] = infinity;
+        }
+    }
+    while (true) {
+        var changed = false;
+        for (var i = 0; i < h.length; i++) {
+            if (newh[i] == h[i]) {
+                continue;
+            }
+            var nbs = neighbours(h.mesh, i);
+            for (var j = 0; j < nbs.length; j++) {
+                if (h[i] >= newh[nbs[j]] + epsilon) {
+                    newh[i] = h[i];
+                    changed = true;
+                    break;
+                }
+                var oh = newh[nbs[j]] + epsilon;
+                if ((newh[i] > oh) && (oh > h[i])) {
+                    newh[i] = oh;
+                    changed = true;
+                }
+            }
+        }
+        if (!changed) {
+            return newh;
+        }
+    }
+}
+
 function erode(h, amount) {
     var er = erosionRate(h);
-    var newh = zero(h.mesh);
+    var newh = flatten(h.mesh);
     var maxr = d3.max(er);
+    var j;
+    var gunk;
+    var gunkOut;
     for (var i = 0; i < h.length; i++) {
+        if (!h.mesh.gunks[i]) {
+            h.mesh.gunks[i] = 0;
+        }
+        gunkOut = h.mesh.gunks[i] * (er[i] / maxr);
+        h.mesh.gunks[i] -= gunkOut;
+
         newh[i] = h[i] - amount * (er[i] / maxr);
+        gunkOut += h[i] - newh[i];
+
+        newh[i] += h.mesh.gunks[i];
+        h.mesh.gunks[i] = 0;
+
+        var nbrs = neighbours(h.mesh, i);
+        var lowerNeighbors = [];
+        for (j = 0; j < nbrs.length; j++) {
+            if (h[nbrs[j]] < h[i]) {
+                lowerNeighbors.push(nbrs[j]);
+            }
+        }
+        if (lowerNeighbors.length) {
+            gunk = gunkOut / lowerNeighbors.length;
+            for (j = 0; j < lowerNeighbors.length; j++) {
+                h.mesh.gunks[lowerNeighbors[j]] += gunk;
+                h.mesh.gunks[i] -= gunk;
+            }
+        }
+        if (gunkOut) {
+            newh[i] += gunkOut;
+        }
     }
     return newh;
 }
@@ -413,7 +456,7 @@ function doErosion(h, amount, n) {
 }
 
 function setSeaLevel(h, q) {
-    var newh = zero(h.mesh);
+    var newh = flatten(h.mesh);
     var delta = quantile(h, q);
     for (var i = 0; i < h.length; i++) {
         newh[i] = h[i] - delta;
@@ -424,7 +467,7 @@ function setSeaLevel(h, q) {
 function cleanCoast(h, iters) {
     for (var iter = 0; iter < iters; iter++) {
         var changed = 0;
-        var newh = zero(h.mesh);
+        var newh = flatten(h.mesh);
         for (var i = 0; i < h.length; i++) {
             newh[i] = h[i];
             var nbs = neighbours(h.mesh, i);
@@ -443,7 +486,7 @@ function cleanCoast(h, iters) {
             changed++;
         }
         h = newh;
-        newh = zero(h.mesh);
+        newh = flatten(h.mesh);
         for (var i = 0; i < h.length; i++) {
             newh[i] = h[i];
             var nbs = neighbours(h.mesh, i);
@@ -546,7 +589,6 @@ function placeCity(render, zero) {
     render.cities = render.cities || [];
     var score = cityScore(render.cities, zero);
     var newcity = d3.scan(score, d3.descending);
-    console.log(newcity);
     render.cities.push(newcity);
 }
 
@@ -840,7 +882,7 @@ function visualizeCities(svg, render, zero) {
 
 function dropEdge(h, p) {
     p = p || 4
-    var newh = zero(h.mesh);
+    var newh = flatten(h.mesh);
     for (var i = 0; i < h.length; i++) {
         var v = h.mesh.vxs[i];
         var x = 2.4 * v[0] / h.mesh.extent.width;
@@ -856,13 +898,20 @@ function generateRandomHeightmap(zero) {
         cone(zero.mesh, randBetween(-1, -1)),
         mountains(zero.mesh, 50)
     );
-    for (var i = 0; i < 10; i++) {
+    for (var i = 0; i < 3; i++) {
         h = relax(h);
     }
     h = peaky(h);
+    h = add(h, mountains(zero.mesh, 4));
+    h = relax(h);
     h = doErosion(h, randBetween(0, 0.1), 5);
+    h = add(h, mountains(zero.mesh, 3));
+    h = relax(h);
     h = setSeaLevel(h, randBetween(0.2, 0.6));
+    h = add(h, mountains(zero.mesh, 2));
+    h = relax(h);
     h = fillSinks(h);
+    h = add(h, mountains(zero.mesh, 1));
     h = cleanCoast(h, 3);
     return h;
 }

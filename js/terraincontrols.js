@@ -12,7 +12,7 @@ var heightControls = d3.select("#heightControls");
 var viewControls = d3.select("#viewControls");
 
 var primSVG = addSVG(primDiv);
-var primZero = zero(generateGoodMesh(points));
+var primZero = flatten(generateGoodMesh(points));
 
 var viewMode = "default";
 
@@ -68,7 +68,7 @@ function primDraw() {
     if (primViewSlope) {
         visualizeSlopes(primSVG, primZero);
     } else {
-        visualizeSlopes(primSVG, zero(primZero.mesh));
+        visualizeSlopes(primSVG, flatten(primZero.mesh));
     }
 
     drawPaths(primSVG, 'border', getBorders(cityRender, primZero));
@@ -88,7 +88,7 @@ primDraw();
 pointsControls.append("button")
     .text("Generate random points")
     .on("click", function () {
-        primZero = zero(generateGoodMesh(points));
+        primZero = flatten(generateGoodMesh(points));
         cityRender.clearCities();
         primDraw();
     });
@@ -98,7 +98,7 @@ pointsControls.append("button")
     .on("click", function () {
         var pts = improvePoints(
             primZero.mesh.pts, 1, primZero.mesh.extent);
-        primZero = zero(makeMesh(pts, primZero.mesh.extent));
+        primZero = flatten(makeMesh(pts, primZero.mesh.extent));
         cityRender.clearCities();
         primDraw();
     });
@@ -115,7 +115,7 @@ heightControls.append("button")
 heightControls.append("button")
     .text("Reset to flat")
     .on("click", function () {
-        primZero = zero(primZero.mesh);
+        primZero = flatten(primZero.mesh);
         cityRender.clearCities();
         primDraw();
     });
