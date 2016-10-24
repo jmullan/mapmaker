@@ -1,9 +1,17 @@
-var points = 4096;
-
 var defaults = {
-    npts: points,
-    extent: defaultExtent
-};
+    pointCount: 4096,
+    extent: {
+        width: 1,
+        height: 1
+    },
+    ncities: 15,
+    nterrs: 5,
+    fontsizes: {
+        region: 40,
+        city: 25,
+        town: 20
+    }
+}
 
 var primDiv = d3.select("#prim");
 
@@ -12,11 +20,10 @@ var heightControls = d3.select("#heightControls");
 var viewControls = d3.select("#viewControls");
 
 var primSVG = addSVG(primDiv);
-var primZero = flatten(generateGoodMesh(points));
+var primZero = flatten(generateGoodMesh(defaults.pointCount, defaults.extent));
 
 var viewMode = "default";
 
-var primViewCoast = true;
 var primViewRivers = true;
 var primViewSlope = true;
 
@@ -31,8 +38,18 @@ function addSVG(div) {
            .attr("viewBox", "-500 -500 1000 1000");
 }
 
+function addCheckbox(toElement, id, label, initial, onChange) {
+    var holder = toElement.append("div");
+    holder.append("input")
+        .attr("type", "checkbox")
+        .attr("checked", initial)
+        .attr("id", id)
+        .on("change", onChange);
+    holder.append("label").attr("for", id).text(label);
+}
+
 function CityRender(h) {
-    this.params = defaultParams;
+    this.params = defaults;
     this.cities = [];
     this.terr = [];
     this.rivers = [];
@@ -46,26 +63,34 @@ function CityRender(h) {
 function primDraw() {
     primSVG.selectAll().remove();
     cityRender.terr = getTerritories(cityRender, primZero);
+
+    var viewMode = document.getElementById("shadingMode").value;
     if (viewMode == "erodeViewErosion") {
-        visualizeVoronoi(primSVG, erosionRate(primZero));
+        visualizeVoronoi(primSVG, primZero, 0, 1);
+    } else if (viewMode == "downhill") {
+        visualizeVoronoi(primSVG, downhill(primZero));
+    } else if (viewMode == "flux") {
+        visualizeVoronoi(primSVG, getFlux(primZero));
+    } else if (viewMode == "slope") {
+        visualizeVoronoi(primSVG, getSlope(primZero));
     } else if (viewMode == "cityViewScore") {
         var score = cityScore(cityRender.cities, primZero);
         visualizeVoronoi(primSVG, score, d3.max(score) - 0.5);
     } else if (viewMode == "territories") {
         visualizeVoronoi(primSVG, cityRender.terr);
     } else if (viewMode == "erodeViewRate") {
-        visualizeVoronoi(primSVG, primZero, 0, 1);
-    } else if (viewMode == "default") {
+        visualizeVoronoi(primSVG, erosionRate(primZero));
+    } else if (viewMode == "heightmap") {
         visualizeVoronoi(primSVG, primZero, -1, 1);
     } else if (viewMode == "nothing") {
         primSVG.selectAll("path.field").remove();
     }
-    if (primViewRivers) {
+    if (d3.select("#showRivers").property("checked")) {
         drawPaths(primSVG, "river", getRivers(primZero, 0.01));
     } else {
         drawPaths(primSVG, "river", []);
     }
-    if (primViewSlope) {
+    if (d3.select("#showSlopes").property("checked")) {
         visualizeSlopes(primSVG, primZero);
     } else {
         visualizeSlopes(primSVG, flatten(primZero.mesh));
@@ -74,7 +99,7 @@ function primDraw() {
     drawPaths(primSVG, 'border', getBorders(cityRender, primZero));
     visualizeCities(primSVG, cityRender, primZero);
 
-    if (primViewCoast) {
+    if (d3.select("#showCoast").property("checked")) {
         drawPaths(primSVG, "coast", contour(primZero, 0));
     } else {
         drawPaths(primSVG, "coast", []);
@@ -82,8 +107,6 @@ function primDraw() {
 
     drawLabels(primSVG, cityRender, primZero);
 }
-
-primDraw();
 
 pointsControls.append("button")
     .text("Generate random points")
@@ -193,60 +216,44 @@ heightControls.append("button")
     });
 
 var modes = {
-    "default": "Showing Heightmap",
-    "erodeViewErosion": "Showing Erosion",
-    "erodeViewRate": "Showing Erosion Rate",
-    "cityViewScore": "Showing City Scoring",
-    "territories": "Showing Territories",
-    "nothing": "No shading."
+    "nothing": "None",
+    "heightmap": "Heightmap",
+    "erodeViewErosion": "Erosion",
+    "erodeViewRate": "Erosion Rate",
+    "cityViewScore": "City Scoring",
+    "territories": "Territories",
+    "flux": "Flux",
+    "slope": "Slope",
+    "downhill": "Downhill"
 }
 
-var erodeBut = primDiv.append("button")
-    .text(modes[viewMode])
-    .on("click", function () {
-        if (modes[viewMode] == undefined) {
-            viewMode = "default";
-        }
-        var nextMode = "default";
-        var useNext = false;
-        for (var mode in modes) {
-            if (useNext) {
-                nextMode = mode;
-                break;
+
+function addSelectBox(toElement, id, label, defaultValue, options, onChange) {
+    var holder = toElement.append("div");
+    var select = holder.append("select")
+        .attr("id", id)
+        .on("change", onChange);
+    var size = 0;
+    for (var optionValue in options) {
+        if (options.hasOwnProperty(optionValue)) {
+            size += 1;
+            var option = select.append("option").attr("value", optionValue);
+            option.text(options[optionValue]);
+            if (optionValue === defaultValue) {
+                option.property("selected", "selected");
             }
-            if (mode == viewMode) {
-                useNext = true;
-            }
         }
-        viewMode = nextMode;
-        erodeBut.text(modes[viewMode]);
-        primDraw();
-    });
+    }
+    select.attr("size", size);
+    holder.append("label").attr("for", id).text(label);
 
-var primCoastBut = primDiv.append("button")
-    .text("Showing coastline")
-    .on("click", function () {
-        primViewCoast = !primViewCoast;
-        primCoastBut.text(primViewCoast ? "Showing coastline" : "Hiding coastline");
-        primDraw();
-    });
+}
+addSelectBox(
+    viewControls, "shadingMode", "Shading", "nothing", modes, primDraw);
 
-var primRiverBut = primDiv.append("button")
-    .text("Showing rivers")
-    .on("click", function () {
-        primViewRivers = !primViewRivers;
-        primRiverBut.text(primViewRivers ? "Showing rivers" : "Hiding rivers");
-        primDraw();
-    });
-
-
-var primSlopeBut = primDiv.append("button")
-    .text("Showing slope shading")
-    .on("click", function () {
-        primViewSlope = !primViewSlope;
-        primSlopeBut.text(primViewSlope ? "Showing slope shading" : "Hiding slope shading");
-        primDraw();
-    });
+addCheckbox(viewControls, "showCoast", "Coastlines", true, primDraw);
+addCheckbox(viewControls, "showRivers", "Rivers", true, primDraw);
+addCheckbox(viewControls, "showSlopes", "Slope shading", true, primDraw);
 
 primDiv.append("button")
     .text("Add new city")
@@ -261,3 +268,5 @@ primDiv.append("button")
         cityRender.clearCities();
         primDraw();
     });
+
+primDraw();

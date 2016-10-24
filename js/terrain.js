@@ -31,16 +31,14 @@ function randomVector(scale) {
     return [scale * rnorm(), scale * rnorm()];
 }
 
-var defaultExtent = {
-    width: 1,
-    height: 1
-};
-
 function generatePoints(n, extent) {
-    extent = extent || defaultExtent;
     var pts = [];
+    pts.extent = extent;
     for (var i = 0; i < n; i++) {
-        pts.push([(Math.random() - 0.5) * extent.width, (Math.random() - 0.5) * extent.height]);
+        pts.push([
+            (Math.random() - 0.5) * extent.width,
+            (Math.random() - 0.5) * extent.height
+        ]);
     }
     return pts;
 }
@@ -55,11 +53,10 @@ function centroid(pts) {
     return [x/pts.length, y/pts.length];
 }
 
-function improvePoints(pts, n, extent) {
+function improvePoints(pts, n) {
     n = n || 1;
-    extent = extent || defaultExtent;
     for (var i = 0; i < n; i++) {
-        pts = voronoi(pts, extent)
+        pts = voronoi(pts, pts.extent)
             .polygons(pts)
             .map(centroid);
     }
@@ -67,7 +64,6 @@ function improvePoints(pts, n, extent) {
 }
 
 function generateGoodPoints(n, extent) {
-    extent = extent || defaultExtent;
     var pts = generatePoints(n, extent);
     pts = pts.sort(function (a, b) {
         return a[0] - b[0];
@@ -76,14 +72,12 @@ function generateGoodPoints(n, extent) {
 }
 
 function voronoi(pts, extent) {
-    extent = extent || defaultExtent;
     var w = extent.width/2;
     var h = extent.height/2;
     return d3.voronoi().extent([[-w, -h], [w, h]])(pts);
 }
 
 function makeMesh(pts, extent) {
-    extent = extent || defaultExtent;
     var vor = voronoi(pts, extent);
     var vxs = [];
     var vxids = {};
@@ -148,7 +142,6 @@ function makeMesh(pts, extent) {
 }
 
 function generateGoodMesh(n, extent) {
-    extent = extent || defaultExtent;
     var pts = generateGoodPoints(n, extent);
     return makeMesh(pts, extent);
 }
@@ -164,7 +157,7 @@ function isnearedge(mesh, i) {
     return x < -0.45 * w || x > 0.45 * w || y < -0.45 * h || y > 0.45 * h;
 }
 
-function neighbours(mesh, i) {
+function getNeighbors(mesh, i) {
     var onbs = mesh.adj[i];
     var nbs = [];
     for (var i = 0; i < onbs.length; i++) {
@@ -190,6 +183,7 @@ function quantile(h, q) {
 
 function flatten(mesh) {
     var z = [];
+    z.downhill = null;
     for (var i = 0; i < mesh.vxs.length; i++) {
         z[i] = 0;
     }
@@ -256,7 +250,7 @@ function mountains(mesh, n, r) {
 function relax(h) {
     var newh = flatten(h.mesh);
     for (var i = 0; i < h.length; i++) {
-        var nbs = neighbours(h.mesh, i);
+        var nbs = getNeighbors(h.mesh, i);
         if (nbs.length < 3) {
             newh[i] = 0;
             continue;
@@ -266,31 +260,6 @@ function relax(h) {
     return newh;
 }
 
-
-function downhill(h) {
-    if (h.downhill) {
-        return h.downhill;
-    }
-    function downfrom(i) {
-        if (isedge(h.mesh, i)) return -2;
-        var best = -1;
-        var besth = h[i];
-        var nbs = neighbours(h.mesh, i);
-        for (var j = 0; j < nbs.length; j++) {
-            if (h[nbs[j]] < besth) {
-                besth = h[nbs[j]];
-                best = nbs[j];
-            }
-        }
-        return best;
-    }
-    var downs = [];
-    for (var i = 0; i < h.length; i++) {
-        downs[i] = downfrom(i);
-    }
-    h.downhill = downs;
-    return downs;
-}
 
 function findSinks(h) {
     var dh = downhill(h);
@@ -309,6 +278,34 @@ function findSinks(h) {
             node = dh[node];
         }
     }
+}
+
+function downhill(h) {
+    if (h.downhill !== null && h.downhill !== undefined) {
+        return h.downhill;
+    }
+    console.log("calculating downhill");
+    function downfrom(i) {
+        if (isedge(h.mesh, i)) {
+            return -2;
+        }
+        var best = -1;
+        var besth = h[i];
+        var nbs = getNeighbors(h.mesh, i);
+        for (var j = 0; j < nbs.length; j++) {
+            if (h[nbs[j]] < besth) {
+                besth = h[nbs[j]];
+                best = nbs[j];
+            }
+        }
+        return best;
+    }
+    var downs = flatten(h.mesh);
+    for (var i = 0; i < h.length; i++) {
+        downs[i] = downfrom(i);
+    }
+    h.downhill = downs;
+    return downs;
 }
 
 function getFlux(h) {
@@ -384,7 +381,7 @@ function fillSinks(h, epsilon) {
             if (newh[i] == h[i]) {
                 continue;
             }
-            var nbs = neighbours(h.mesh, i);
+            var nbs = getNeighbors(h.mesh, i);
             for (var j = 0; j < nbs.length; j++) {
                 if (h[i] >= newh[nbs[j]] + epsilon) {
                     newh[i] = h[i];
@@ -424,7 +421,7 @@ function erode(h, amount) {
         newh[i] += h.mesh.gunks[i];
         h.mesh.gunks[i] = 0;
 
-        var nbrs = neighbours(h.mesh, i);
+        var nbrs = getNeighbors(h.mesh, i);
         var lowerNeighbors = [];
         for (j = 0; j < nbrs.length; j++) {
             if (h[nbrs[j]] < h[i]) {
@@ -470,7 +467,7 @@ function cleanCoast(h, iters) {
         var newh = flatten(h.mesh);
         for (var i = 0; i < h.length; i++) {
             newh[i] = h[i];
-            var nbs = neighbours(h.mesh, i);
+            var nbs = getNeighbors(h.mesh, i);
             if (h[i] <= 0 || nbs.length != 3) continue;
             var count = 0;
             var best = -999999;
@@ -489,7 +486,7 @@ function cleanCoast(h, iters) {
         newh = flatten(h.mesh);
         for (var i = 0; i < h.length; i++) {
             newh[i] = h[i];
-            var nbs = neighbours(h.mesh, i);
+            var nbs = getNeighbors(h.mesh, i);
             if (h[i] > 0 || nbs.length != 3) continue;
             var count = 0;
             var best = 999999;
@@ -510,7 +507,7 @@ function cleanCoast(h, iters) {
 }
 
 function trislope(zero, i) {
-    var nbs = neighbours(zero.mesh, i);
+    var nbs = getNeighbors(zero.mesh, i);
     if (nbs.length != 3) return [0,0];
     var p0 = zero.mesh.vxs[nbs[0]];
     var p1 = zero.mesh.vxs[nbs[1]];
@@ -621,7 +618,7 @@ function getTerritories(render, zero) {
     }
     for (var i = 0; i < n; i++) {
         terr[cities[i]] = cities[i];
-        var nbs = neighbours(zero.mesh, cities[i]);
+        var nbs = getNeighbors(zero.mesh, cities[i]);
         for (var j = 0; j < nbs.length; j++) {
             queue.queue({
                 score: weight(cities[i], nbs[j]),
@@ -634,7 +631,7 @@ function getTerritories(render, zero) {
         var u = queue.dequeue();
         if (terr[u.vx] != undefined) continue;
         terr[u.vx] = u.city;
-        var nbs = neighbours(zero.mesh, u.vx);
+        var nbs = getNeighbors(zero.mesh, u.vx);
         for (var i = 0; i < nbs.length; i++) {
             var v = nbs[i];
             if (terr[v] != undefined) continue;
@@ -794,7 +791,7 @@ function visualizeSlopes(svg, zero) {
         if (zero[i] <= 0 || isnearedge(zero.mesh, i)) {
             continue;
         }
-        var nbs = neighbours(zero.mesh, i);
+        var nbs = getNeighbors(zero.mesh, i);
         nbs.push(i);
         var s = 0;
         var s2 = 0;
@@ -1131,16 +1128,4 @@ function drawMap(svg, render, zero) {
     visualizeSlopes(svg, render);
     visualizeCities(svg, render);
     drawLabels(svg, render);
-}
-
-var defaultParams = {
-    extent: defaultExtent,
-    npts: 16384,
-    ncities: 15,
-    nterrs: 5,
-    fontsizes: {
-        region: 40,
-        city: 25,
-        town: 20
-    }
 }
