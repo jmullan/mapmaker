@@ -1,5 +1,5 @@
 var defaults = {
-    pointCount: 4096,
+    pointCount: 20000,
     extent: {
         width: 1,
         height: 1
@@ -65,11 +65,7 @@ function primDraw() {
     cityRender.terr = getTerritories(cityRender, primZero);
 
     var viewMode = document.getElementById("shadingMode").value;
-    if (viewMode == "erodeViewErosion") {
-        visualizeVoronoi(primSVG, primZero, 0, 1);
-    } else if (viewMode == "downhill") {
-        visualizeVoronoi(primSVG, downhill(primZero));
-    } else if (viewMode == "flux") {
+    if (viewMode == "flux") {
         visualizeVoronoi(primSVG, getFlux(primZero));
     } else if (viewMode == "slope") {
         visualizeVoronoi(primSVG, getSlope(primZero));
@@ -82,6 +78,8 @@ function primDraw() {
         visualizeVoronoi(primSVG, erosionRate(primZero));
     } else if (viewMode == "heightmap") {
         visualizeVoronoi(primSVG, primZero, -1, 1);
+    } else if (viewMode == "waterDepth") {
+        visualizeVoronoi(primSVG, getWaterDepth(primZero), 0, 1);
     } else if (viewMode == "nothing") {
         primSVG.selectAll("path.field").remove();
     }
@@ -98,8 +96,15 @@ function primDraw() {
 
     drawPaths(primSVG, 'border', getBorders(cityRender, primZero));
     visualizeCities(primSVG, cityRender, primZero);
-
+    /*
+    if (d3.select("#showWater").property("checked")) {
+        visualizeWater(primSVG, getWaterDepth(primZero), -1, 1);
+    } else {
+        primSVG.selectAll("path.water").remove();
+    }
+     */
     if (d3.select("#showCoast").property("checked")) {
+        drawPaths(primSVG, "coast", []);
         drawPaths(primSVG, "coast", contour(primZero, 0));
     } else {
         drawPaths(primSVG, "coast", []);
@@ -111,18 +116,18 @@ function primDraw() {
 pointsControls.append("button")
     .text("Generate random points")
     .on("click", function () {
-        primZero = flatten(generateGoodMesh(points));
-        cityRender.clearCities();
+        primZero = flatten(generateGoodMesh(defaults.pointCount));
+        cityRender = new CityRender(primZero)
         primDraw();
     });
 
 pointsControls.append("button")
     .text("Improve points")
     .on("click", function () {
-        var pts = improvePoints(
-            primZero.mesh.pts, 1, primZero.mesh.extent);
-        primZero = flatten(makeMesh(pts, primZero.mesh.extent));
-        cityRender.clearCities();
+        var mesh = primZero.mesh;
+        var points = getImprovedPoints(mesh.points);
+        primZero = flatten(makeMesh(points));
+        cityRender = new CityRender(primZero)
         primDraw();
     });
 
@@ -131,7 +136,7 @@ heightControls.append("button")
     .text("Generate random heightmap")
     .on("click", function () {
         primZero = generateRandomHeightmap(primZero);
-        cityRender.clearCities();
+        cityRender = new CityRender(primZero)
         primDraw();
     });
 
@@ -139,15 +144,15 @@ heightControls.append("button")
     .text("Reset to flat")
     .on("click", function () {
         primZero = flatten(primZero.mesh);
-        cityRender.clearCities();
+        cityRender = new CityRender(primZero)
         primDraw();
     });
 
 heightControls.append("button")
     .text("Add random slope")
     .on("click", function () {
-        primZero = add(primZero, slope(primZero.mesh, randomVector(4)));
-        cityRender.clearCities();
+        primZero = add(primZero, tiltMap(primZero.mesh, randomVector(4)));
+        cityRender = new CityRender(primZero)
         primDraw();
     });
 
@@ -155,6 +160,7 @@ heightControls.append("button")
     .text("Add cone")
     .on("click", function () {
         primZero = add(primZero, cone(primZero.mesh, -0.5));
+        cityRender = new CityRender(primZero)
         primDraw();
     });
 
@@ -162,6 +168,7 @@ heightControls.append("button")
     .text("Add inverted cone")
     .on("click", function () {
         primZero = add(primZero, cone(primZero.mesh, 0.5));
+        cityRender = new CityRender(primZero)
         primDraw();
     });
 
@@ -169,6 +176,7 @@ heightControls.append("button")
     .text("Add five blobs")
     .on("click", function () {
         primZero = add(primZero, mountains(primZero.mesh, 5));
+        cityRender = new CityRender(primZero)
         primDraw();
     });
 
@@ -176,6 +184,7 @@ heightControls.append("button")
     .text("Normalize heightmap")
     .on("click", function () {
         primZero = normalize(primZero);
+        cityRender = new CityRender(primZero)
         primDraw();
     });
 
@@ -183,6 +192,7 @@ heightControls.append("button")
     .text("Round hills")
     .on("click", function () {
         primZero = peaky(primZero);
+        cityRender = new CityRender(primZero)
         primDraw();
     });
 
@@ -190,6 +200,7 @@ heightControls.append("button")
     .text("Relax")
     .on("click", function () {
         primZero = relax(primZero);
+        cityRender = new CityRender(primZero)
         primDraw();
     });
 
@@ -197,6 +208,7 @@ heightControls.append("button")
     .text("Set sea level to median")
     .on("click", function () {
         primZero = setSeaLevel(primZero, 0.5);
+        cityRender = new CityRender(primZero)
         primDraw();
     });
 
@@ -204,6 +216,7 @@ heightControls.append("button")
     .text("Erode")
     .on("click", function () {
         primZero = doErosion(primZero, 0.1);
+        cityRender = new CityRender(primZero)
         primDraw();
     });
 
@@ -212,19 +225,19 @@ heightControls.append("button")
     .on("click", function () {
         primZero = cleanCoast(primZero, 1);
         primZero = fillSinks(primZero);
+        cityRender = new CityRender(primZero)
         primDraw();
     });
 
 var modes = {
     "nothing": "None",
     "heightmap": "Heightmap",
-    "erodeViewErosion": "Erosion",
     "erodeViewRate": "Erosion Rate",
     "cityViewScore": "City Scoring",
     "territories": "Territories",
     "flux": "Flux",
     "slope": "Slope",
-    "downhill": "Downhill"
+    "waterDepth": "Water"
 }
 
 
@@ -249,11 +262,12 @@ function addSelectBox(toElement, id, label, defaultValue, options, onChange) {
 
 }
 addSelectBox(
-    viewControls, "shadingMode", "Shading", "nothing", modes, primDraw);
+    viewControls, "shadingMode", "Shading", "waterDepth", modes, primDraw);
 
 addCheckbox(viewControls, "showCoast", "Coastlines", true, primDraw);
 addCheckbox(viewControls, "showRivers", "Rivers", true, primDraw);
 addCheckbox(viewControls, "showSlopes", "Slope shading", true, primDraw);
+addCheckbox(viewControls, "showWater", "Water", false, primDraw);
 
 primDiv.append("button")
     .text("Add new city")
@@ -265,7 +279,7 @@ primDiv.append("button")
 primDiv.append("button")
     .text("Clear cities")
     .on("click", function () {
-        cityRender.clearCities();
+        cityRender = new CityRender(primZero)
         primDraw();
     });
 
