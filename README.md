@@ -27,3 +27,5 @@ This code depends on the following:
 See also:
 
 http://www.science.oregonstate.edu/~lancasts/CERL97.pdf
+and
+https://www.researchgate.net/publication/229871193_Modelling_landscape_evolution_on_geological_time_scales_A_new_method_based_on_irregular_spatial_discretization
