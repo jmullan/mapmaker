@@ -1,5 +1,5 @@
 var defaults = {
-    pointCount: 20000,
+    pointCount: 32000,
     extent: {
         width: 1,
         height: 1
@@ -20,7 +20,7 @@ var heightControls = d3.select("#heightControls");
 var viewControls = d3.select("#viewControls");
 
 var primSVG = addSVG(primDiv);
-var primZero = flatten(generateGoodMesh(defaults.pointCount, defaults.extent));
+var primZero = flatten(generateGoodMesh(defaults));
 
 var viewMode = "default";
 
@@ -77,7 +77,7 @@ function primDraw() {
     } else if (viewMode == "erodeViewRate") {
         visualizeVoronoi(primSVG, erosionRate(primZero));
     } else if (viewMode == "heightmap") {
-        visualizeVoronoi(primSVG, primZero, -1, 1);
+        visualizeVoronoi(primSVG, primZero);
     } else if (viewMode == "waterDepth") {
         visualizeVoronoi(primSVG, getWaterDepth(primZero), 0, 1);
     } else if (viewMode == "nothing") {
@@ -116,7 +116,7 @@ function primDraw() {
 pointsControls.append("button")
     .text("Generate random points")
     .on("click", function () {
-        primZero = flatten(generateGoodMesh(defaults.pointCount));
+        primZero = flatten(generateGoodMesh(defaults));
         cityRender = new CityRender(primZero)
         primDraw();
     });
@@ -173,9 +173,17 @@ heightControls.append("button")
     });
 
 heightControls.append("button")
-    .text("Add five blobs")
+    .text("Add blob")
     .on("click", function () {
-        primZero = add(primZero, mountains(primZero.mesh, 5));
+        primZero = add(primZero, mountains(primZero.mesh, 1, 0.05, 1));
+        cityRender = new CityRender(primZero)
+        primDraw();
+    });
+
+heightControls.append("button")
+    .text("Add scoop")
+    .on("click", function () {
+        primZero = add(primZero, mountains(primZero.mesh, 1, 0.05, -1));
         cityRender = new CityRender(primZero)
         primDraw();
     });

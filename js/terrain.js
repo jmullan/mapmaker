@@ -23,12 +23,15 @@ function scaleByVector(vector1, vector2) {
     return [vector1[0] * vector2[0], vector1[1] * vector2[1]];
 }
 
-function generatePoints(pointCount, extent) {
+function generatePoints(config) {
     var points = [],
-        scaleVector = [extent.width, extent.height],
+        scaleVector = [
+            config.extent.width,
+            config.extent.height
+        ],
         i;
-    points.extent = extent;
-    for (i = 0; i < pointCount; i++) {
+    points.config = config;
+    for (i = 0; i < config.pointCount; i++) {
         points.push(scaleByVector(randomVector(1), scaleVector));
     }
     validatePoints(points);
@@ -61,13 +64,13 @@ function getImprovedPoints(points) {
     polygons.forEach(function (points) {
         pointsOut.push(centroid(points));
     });
-    pointsOut.extent = points.extent;
+    pointsOut.config = points.config;
     validatePoints(pointsOut);
     return pointsOut;
 }
 
-function generateGoodPoints(pointCount, extent) {
-    var points = generatePoints(pointCount, extent);
+function generateGoodPoints(config) {
+    var points = generatePoints(config);
     validatePoints(points);
     points = points.sort(function (a, b) {
         return a[0] - b[0];
@@ -76,15 +79,15 @@ function generateGoodPoints(pointCount, extent) {
     return getImprovedPoints(points);
 }
 
-function generateGoodMesh(pointCount, extent) {
-    var points = generateGoodPoints(pointCount, extent);
+function generateGoodMesh(config) {
+    var points = generateGoodPoints(config);
     validatePoints(points);
     return makeMesh(points);
 }
 
 function voronoi(points) {
-    var w = points.extent.width / 2;
-    var h = points.extent.height / 2;
+    var w = points.config.extent.width / 2;
+    var h = points.config.extent.height / 2;
     validatePoints(points);
     return d3.voronoi().extent([[-w, -h], [w, h]])(points);
 }
@@ -95,43 +98,47 @@ function makeMesh(points) {
     var vxids = {};
     var adj = [];
     var edges = [];
-    var tris = [];
+    var triangles = [];
     var gunks = [];
-    for (var i = 0; i < vor.edges.length; i++) {
-        var e = vor.edges[i];
-        if (e == undefined) {
+    var i;
+    for (i = 0; i < vor.edges.length; i++) {
+        var edge = vor.edges[i];
+        if (edge == undefined) {
             continue;
         }
-        var e0 = vxids[e[0]];
-        var e1 = vxids[e[1]];
+        edge[0].border = !edge.right || !edge.left;
+        edge[1].border = !edge.right || !edge.left;
+        edge.border = !edge.right || !edge.left;
+        var e0 = vxids[edge[0]];
+        var e1 = vxids[edge[1]];
         if (e0 == undefined) {
             e0 = vxs.length;
-            vxids[e[0]] = e0;
-            vxs.push(e[0]);
+            vxids[edge[0]] = e0;
+            vxs.push(edge[0]);
         }
         if (e1 == undefined) {
             e1 = vxs.length;
-            vxids[e[1]] = e1;
-            vxs.push(e[1]);
+            vxids[edge[1]] = e1;
+            vxs.push(edge[1]);
         }
         adj[e0] = adj[e0] || [];
         adj[e0].push(e1);
         adj[e1] = adj[e1] || [];
         adj[e1].push(e0);
-        edges.push([e0, e1, e.left, e.right]);
-        tris[e0] = tris[e0] || [];
-        if (!tris[e0].includes(e.left)) {
-            tris[e0].push(e.left);
+        edges.push([e0, e1, edge.left, edge.right]);
+        triangles[e0] = triangles[e0] || [];
+        if (!triangles[e0].includes(edge.left)) {
+            triangles[e0].push(edge.left);
         }
-        if (e.right && !tris[e0].includes(e.right)) {
-            tris[e0].push(e.right);
+        if (edge.right && !triangles[e0].includes(edge.right)) {
+            triangles[e0].push(edge.right);
         }
-        tris[e1] = tris[e1] || [];
-        if (!tris[e1].includes(e.left)) {
-            tris[e1].push(e.left);
+        triangles[e1] = triangles[e1] || [];
+        if (!triangles[e1].includes(edge.left)) {
+            triangles[e1].push(edge.left);
         }
-        if (e.right && !tris[e1].includes(e.right)) {
-            tris[e1].push(e.right);
+        if (edge.right && !triangles[e1].includes(edge.right)) {
+            triangles[e1].push(edge.right);
         }
     }
     var mesh = {
@@ -139,11 +146,13 @@ function makeMesh(points) {
         vor: vor,
         vxs: vxs,
         adj: adj,
-        tris: tris,
+        triangles: triangles,
         edges: edges,
-        extent: points.extent,
+        config: points.config,
         gunks: gunks
     }
+    mesh.edgew = mesh.config.extent.width * 0.45;
+    mesh.edgeh = mesh.config.extent.height * 0.45;
     mesh.map = function (f) {
         var mapped = vxs.map(f);
         mapped.mesh = mesh;
@@ -152,16 +161,12 @@ function makeMesh(points) {
     return mesh;
 }
 
-function isedge(mesh, i) {
+function isBorderEdge(mesh, i) {
     return (mesh.adj[i].length < 3);
 }
 
-function isnearedge(mesh, i) {
-    var x = mesh.vxs[i][0];
-    var y = mesh.vxs[i][1];
-    var w = mesh.extent.width;
-    var h = mesh.extent.height;
-    return x < -0.45 * w || x > 0.45 * w || y < -0.45 * h || y > 0.45 * h;
+function isNearEdge(mesh, i) {
+    return mesh.vxs[i].border;
 }
 
 function getNeighbors(mesh, i) {
@@ -185,7 +190,7 @@ function quantile(points, q) {
         sortedPoints[i] = points[i];
     }
     sortedPoints.sort(d3.ascending);
-    sortedPoints.extent = points.extent;
+    sortedPoints.config = points.config;
     return d3.quantile(sortedPoints, q);
 }
 
@@ -196,6 +201,7 @@ function flatten(mesh) {
         z[i] = 0;
     }
     z.mesh = mesh;
+    z.config = mesh.config;
     return z;
 }
 
@@ -239,36 +245,6 @@ function add() {
     return newvals;
 }
 
-function mountains(mesh, n, r) {
-    r = r || 0.05;
-    var mounts = [];
-    for (var i = 0; i < n; i++) {
-        mounts.push([
-            mesh.extent.width * (Math.random() - 0.5),
-            mesh.extent.height * (Math.random() - 0.5)
-        ]);
-    }
-    var newvals = flatten(mesh);
-    for (var i = 0; i < mesh.vxs.length; i++) {
-        var p = mesh.vxs[i];
-        for (var j = 0; j < n; j++) {
-            var m = mounts[j];
-            newvals[i] += Math.pow(
-                Math.exp(
-                    -(
-                        (p[0] - m[0]) *
-                        (p[0] - m[0]) +
-                        (p[1] - m[1]) *
-                        (p[1] - m[1])
-                    ) / (2 * r * r)
-                ),
-                2
-            );
-        }
-    }
-    return newvals;
-}
-
 function relax(h) {
     var newh = flatten(h.mesh);
     for (var i = 0; i < h.length; i++) {
@@ -289,7 +265,7 @@ function findSinks(h) {
     for (var i = 0; i < dh.length; i++) {
         var node = i;
         while (true) {
-            if (isedge(h.mesh, node)) {
+            if (isBorderEdge(h.mesh, node)) {
                 sinks[i] = -2;
                 break;
             }
@@ -307,9 +283,6 @@ function getDownhills(h) {
         return h.downhill;
     }
     function downfrom(i) {
-        if (isedge(h.mesh, i)) {
-            return i;
-        }
         var best = i;
         var besth = h[i];
         var nbs = getNeighbors(h.mesh, i);
@@ -329,69 +302,221 @@ function getDownhills(h) {
     return downs;
 }
 
-
-function overflow(water, points, i, amount) {
-    water[i] += amount;
-    var neighbors = getNeighbors(points.mesh, i);
-    var best = i;
-    var besth = 1000;
-    for (var j = 0; j < neighbors.length; j++) {
-        var neighbor = neighbors[j];
-        if (
-            points[neighbor] > points[i] &&
-            points[i] + water[i] > points[neighbor] + water[neighbor]
-        ) {
-            overflow(
-                water, points, neighbor,
-                points[i] - points[neighbor] + water[i]);
-        }
-    }
+function by(elevations, ascending) {
+    var inverted = ascending ? 1 : -1;
+    return (function (a, b) {
+        return inverted * (elevations[a] - elevations[b]);
+    });
 }
 
+function getWaterDepth(elevations) {
+    var startTime = new Date();
 
-function getWaterDepth(points) {
-    var flux = getFlux(points);
-    var water = flatten(points.mesh);
-    var downhills = getDownhills(points);
-    for (var i = 0; i < points.length; i++) {
-        water[i] = 0;
-        if (points[i] < 0) {
-            water[i] = -points[i];
+    var flux = getFlux(elevations);
+    var downhills = getDownhills(elevations);
+
+    var water = flatten(elevations.mesh);
+    water.minima = {};
+    water.catchments = {};
+
+    var catchments = [];
+
+    var i;
+
+    for (i = 0; i < elevations.length; i++) {
+        // find obvious local minima and catchments
+        water.minima[i] = null;
+        if (elevations[i] < 0) {
+            // elevations below 0 are water by default, and count as a minimum
+            water[i] = -elevations[i];
+            water.minima[i] = i;
+            water.catchments[i] = {
+                sill: i,
+                nodes: [i]
+            };
+            catchments.push(i);
+        } else if (isNearEdge(elevations.mesh, i)) {
+            // border nodes drain off the border
+            water[i] = 0.1;
+            water.minima[i] = i;
+            water.catchments[i] = {
+                sill: i,
+                nodes: [i]
+            };
+            catchments.push(i);
         } else if (downhills[i] == i) {
-            overflow(water, points, i, flux[i]);
+            // a local minimum
+            water[i] = 0.1;
+            water.minima[i] = i;
+            water.catchments[i] = {
+                sill: null,
+                nodes: [i]
+            };
+            catchments.push(i);
         }
     }
-    water.extent = points.extent;
+
+    var toCheck = [];
+    for (i = 0; i < elevations.length; i++) {
+        // find nodes with no minimum
+        if (water.minima[i] === null) {
+            toCheck.push(i);
+        }
+    }
+
+    var checking;
+    var receiver;
+    while (toCheck.length) {
+        // take the top item from the stack
+        checking = toCheck.pop();
+        if (water.minima[checking] !== null) {
+            // this already has a minimum
+            continue;
+        }
+        receiver = downhills[checking];
+        if (water.minima[receiver] !== null) {
+            // the receiver for this already has a minimum
+            water.minima[checking] = water.minima[receiver];
+            continue;
+        }
+        // we have not found the minimum for this item, so put
+        // it back on the stack and check its receiver first.
+        toCheck.push(checking);
+        toCheck.push(receiver);
+    }
+
+    // everything should either be or have a minimum now
+
+    var catchment;
+    var neighbors;
+    var neighbor;
+    while (catchments.length) {
+        // now we want to try to merge adjascent catchments
+        // with the same height
+
+        catchment = catchments.pop();
+        if (water.minima[catchment] !== catchment) {
+            // This was claimed by another catchment, so ignore
+            continue;
+        }
+
+        neighbors = getNeighbors(elevations.mesh, catchment);
+        for (i = 0; i < neighbors.length; i++) {
+            neighbor = neighbors[i];
+            if (
+                elevations[catchment] == elevations[neighbor] &&
+                    water.minima[neighbor] == neighbor
+            ) {
+
+                // We have found a catchment next to a catchment of the same
+                // height so the neighboring node should be merged in to this
+                // catchment
+                // A catchment is in its own list of nodes, so these lines
+                // aren't needed:
+                // water.minima[neighbor] = catchment;
+                // water.catchments[catchment].nodes.push(neighbor);
+
+                // if the neighbor was also a catchment, we should merge in all
+                if (water.catchments[neighbor] !== undefined) {
+                    water.catchments[neighbor].nodes.forEach(function (v) {
+                        water.minima[v] = catchment;
+                        water.catchments[catchment].nodes.push(v);
+                    });
+                    delete water.catchments[neighbor];
+                }
+            }
+        }
+    }
+
+    // find the sill for any catchment with no sill
+    var minimum;
+    Object.keys(water.catchments).forEach(
+        function (catchment) {
+            if (water.catchments[catchment] === undefined) {
+                return
+            }
+            var data = water.catchments[catchment];
+            var neighbors;
+            var checking;
+            var neighbor;
+            var catchmentElevation = elevations[catchment];
+            var i;
+            var j;
+            var filling;
+            if (data.sill !== null) {
+                return;
+            }
+            data.nodes.sort(by(elevations, true));
+
+            for (i = 0; data.sill === null && i < data.nodes.length; i += 1) {
+                checking = data.nodes[i];
+                neighbors = getNeighbors(elevations.mesh, checking).filter(
+                    function (n) {
+                        return water.minima[n] != catchment;
+                    }
+                );
+                neighbors.sort(by(elevations, true));
+                for (j = 0; j < neighbors.length; j += 1) {
+                    neighbor = neighbors[j];
+                    data.sill = neighbor;
+                    break;
+                }
+                catchmentElevation = elevations[checking];
+            }
+            if (data.sill !== null) {
+                catchmentElevation = elevations[data.sill];
+                for (i = 0; i < data.nodes.length; i += 1) {
+                    filling = data.nodes[i];
+                    if (elevations[filling] < catchmentElevation) {
+                        water[filling] = catchmentElevation -
+                            elevations[filling];
+                    }
+                }
+            } else {
+                console.log("no sill for catchment " + catchment);
+            }
+
+        }
+    );
+
+    var endTime = new Date();
+    var timeDiff = endTime - startTime;
+    timeDiff /= 1000;
+    console.log(timeDiff);
     return water;
 }
+
 
 function getFlux(points) {
     var downhills = getDownhills(points);
     var idxs = [];
     var flux = flatten(points.mesh);
     var surfacePointCount = countGround(points);
-    for (var i = 0; i < points.length; i++) {
+    var i;
+    var j;
+    for (i = 0; i < points.length; i++) {
         idxs[i] = i;
         if (points[i] > 0) {
             flux[i] = 1 / surfacePointCount;
         }
     }
-    idxs.sort(function (a, b) {
-        return points[b] - points[a];
-    });
-    for (var i = 0; i < points.length; i++) {
-        var j = idxs[i];
+    idxs.sort(by(points, false));
+    for (i = 0; i < idxs.length; i++) {
+        j = idxs[i];
         if (downhills[j] != j) {
-            if (points[i] >= 0) {
+            if (points[j] >= 0) {
                 flux[downhills[j]] += flux[j];
             } else {
                 flux[j] = flux[j] / 9;
                 // flux[downhills[j]] += flux[j];
             }
+        } else {
+
         }
     }
     return flux;
 }
+
 
 function getSlope(h) {
     // map input points to the amount of slope per point
@@ -421,7 +546,7 @@ function fillSinks(h, epsilon) {
     var infinity = 999999;
     var newh = flatten(h.mesh);
     for (var i = 0; i < h.length; i++) {
-        if (isnearedge(h.mesh, i)) {
+        if (isNearEdge(h.mesh, i)) {
             newh[i] = h[i];
         } else {
             newh[i] = infinity;
@@ -584,12 +709,12 @@ function getSlopeVectors(zero, i) {
 function cityScore(cities, zero) {
     var score = map(getFlux(zero), Math.sqrt);
     for (var i = 0; i < zero.length; i++) {
-        if (zero[i] <= 0 || isnearedge(zero.mesh, i)) {
+        if (zero[i] <= 0 || isNearEdge(zero.mesh, i)) {
             score[i] = -999999;
             continue;
         }
-        score[i] += 0.01 / (1e-9 + Math.abs(zero.mesh.vxs[i][0]) - zero.mesh.extent.width/2)
-        score[i] += 0.01 / (1e-9 + Math.abs(zero.mesh.vxs[i][1]) - zero.mesh.extent.height/2)
+        score[i] += 0.01 / (1e-9 + Math.abs(zero.mesh.vxs[i][0]) - zero.mesh.config.extent.width/2)
+        score[i] += 0.01 / (1e-9 + Math.abs(zero.mesh.vxs[i][1]) - zero.mesh.config.extent.height/2)
         for (var j = 0; j < cities.length; j++) {
             score[i] -= 0.02 / (distance(zero.mesh, cities[j], i) + 1e-9);
         }
@@ -602,7 +727,7 @@ function contour(zero, level) {
     for (var i = 0; i < zero.mesh.edges.length; i++) {
         var e = zero.mesh.edges[i];
         if (e[3] == undefined) continue;
-        if (isnearedge(zero.mesh, e[0]) || isnearedge(zero.mesh, e[1])) {
+        if (isNearEdge(zero.mesh, e[0]) || isNearEdge(zero.mesh, e[1])) {
             continue;
         }
         if ((zero[e[0]] > level && zero[e[1]] <= level) ||
@@ -623,23 +748,29 @@ function countGround(points) {
     return above;
 }
 
-function getRivers(points, limit) {
-    var dh = getDownhills(points);
-    var flux = getFlux(points);
+function getRivers(elevations, limit) {
+    var downhills = getDownhills(elevations);
+    var flux = getFlux(elevations);
+    var waters = getWaterDepth(elevations);
     var links = [];
-    var above = countGround(points);
-    limit *= above / points.length;
-    for (var i = 0; i < dh.length; i++) {
-        if (isnearedge(points.mesh, i)) {
+    var above = countGround(elevations);
+    limit *= above / elevations.length;
+    for (var i = 0; i < downhills.length; i++) {
+        if (isNearEdge(elevations.mesh, i)) {
             continue;
         }
-        if (flux[i] > limit && points[i] > 0 && dh[i] >= 0) {
-            var up = points.mesh.vxs[i];
-            var down = points.mesh.vxs[dh[i]];
-            if (points[dh[i]] > 0) {
+        if (flux[i] > limit && elevations[i] > 0 && downhills[i] >= 0) {
+            var up = elevations.mesh.vxs[i];
+            var down = elevations.mesh.vxs[downhills[i]];
+            if (elevations[downhills[i]] > 0) {
                 links.push([up, down]);
             } else {
-                links.push([up, [(up[0] + down[0])/2, (up[1] + down[1])/2]]);
+                links.push(
+                    [
+                        up,
+                        [(up[0] + down[0]) / 2, (up[1] + down[1]) / 2]
+                    ]
+                );
             }
         }
     }
@@ -724,9 +855,15 @@ function getBorders(render, zero) {
     var edges = [];
     for (var i = 0; i < terr.mesh.edges.length; i++) {
         var e = terr.mesh.edges[i];
-        if (e[3] == undefined) continue;
-        if (isnearedge(terr.mesh, e[0]) || isnearedge(terr.mesh, e[1])) continue;
-        if (zero[e[0]] < 0 || zero[e[1]] < 0) continue;
+        if (e[3] == undefined) {
+            continue;
+        }
+        if (isNearEdge(terr.mesh, e[0]) || isNearEdge(terr.mesh, e[1])) {
+            continue;
+        }
+        if (zero[e[0]] < 0 || zero[e[1]] < 0) {
+            continue;
+        }
         if (terr[e[0]] != terr[e[1]]) {
             edges.push([e[2], e[3]]);
         }
@@ -835,7 +972,7 @@ function visualizeField(className, svg, field, lo, hi) {
                 return (x - lo) / (hi - lo)
             }
         });
-    var tris = svg.selectAll('path.' + className).data(field.mesh.tris)
+    var tris = svg.selectAll('path.' + className).data(field.mesh.triangles)
     tris.enter()
         .append('path')
         .classed(className, true);
@@ -850,7 +987,11 @@ function visualizeField(className, svg, field, lo, hi) {
                 return 'transparent';
             }
             return d3.interpolateViridis(mappedvals[i]);
-        });
+        })
+        .on("click",
+            function (datum, index) {
+                console.log([index, field[index]]);
+            });
 }
 
 function visualizeWater(svg, field, lo, hi) {
@@ -877,7 +1018,7 @@ function visualizeSlopes(svg, zero) {
     var strokes = [];
     var r = 0.25 / Math.sqrt(zero.length);
     for (var i = 0; i < zero.length; i++) {
-        if (zero[i] <= 0 || isnearedge(zero.mesh, i)) {
+        if (zero[i] <= 0 || isNearEdge(zero.mesh, i)) {
             continue;
         }
         var nbs = getNeighbors(zero.mesh, i);
@@ -972,11 +1113,43 @@ function dropEdge(h, p) {
     var newh = flatten(h.mesh);
     for (var i = 0; i < h.length; i++) {
         var v = h.mesh.vxs[i];
-        var x = 2.4 * v[0] / h.mesh.extent.width;
-        var y = 2.4 * v[1] / h.mesh.extent.height;
+        var x = 2.4 * v[0] / h.mesh.config.extent.width;
+        var y = 2.4 * v[1] / h.mesh.config.extent.height;
         newh[i] = h[i] - Math.exp(10*(Math.pow(Math.pow(x, p) + Math.pow(y, p), 1/p) - 1));
     }
     return newh;
+}
+
+function mountains(mesh, number, radius, height) {
+    radius = radius || 0.05;
+    height = height || 1;
+    var mounts = [];
+    var i;
+    for (i = 0; i < number; i++) {
+        mounts.push([
+            mesh.config.extent.width * (Math.random() - 0.5),
+            mesh.config.extent.height * (Math.random() - 0.5)
+        ]);
+    }
+    var newvals = flatten(mesh);
+    for (i = 0; i < mesh.vxs.length; i++) {
+        var p = mesh.vxs[i];
+        for (var j = 0; j < number; j++) {
+            var m = mounts[j];
+            newvals[i] += (Math.pow(
+                Math.exp(
+                    -(
+                        (p[0] - m[0]) *
+                        (p[0] - m[0]) +
+                        (p[1] - m[1]) *
+                        (p[1] - m[1])
+                    ) / (2 * radius * radius)
+                ),
+                2
+            ) * height);
+        }
+    }
+    return newvals;
 }
 
 function generateRandomHeightmap(zero) {
@@ -996,6 +1169,7 @@ function generateRandomHeightmap(zero) {
     h = relax(h);
     h = setSeaLevel(h, randBetween(0.2, 0.6));
     h = add(h, mountains(zero.mesh, 2));
+    h = add(h, mountains(zero.mesh, 2, 0.05, -2));
     h = relax(h);
     h = fillSinks(h);
     h = add(h, mountains(zero.mesh, 1));
@@ -1036,16 +1210,16 @@ function drawLabels(svg, render, zero) {
     var citylabels = [];
     function penalty(label) {
         var pen = 0;
-        if (label.x0 < -0.45 * zero.mesh.extent.width) {
+        if (label.x0 < -0.45 * zero.mesh.config.extent.width) {
             pen += 100;
         }
-        if (label.x1 > 0.45 * zero.mesh.extent.width) {
+        if (label.x1 > 0.45 * zero.mesh.config.extent.width) {
             pen += 100;
         }
-        if (label.y0 < -0.45 * zero.mesh.extent.height) {
+        if (label.y0 < -0.45 * zero.mesh.config.extent.height) {
             pen += 100;
         }
-        if (label.y1 > 0.45 * zero.mesh.extent.height) {
+        if (label.y1 > 0.45 * zero.mesh.config.extent.height) {
             pen += 100;
         }
         for (var i = 0; i < citylabels.length; i++) {
@@ -1181,16 +1355,16 @@ function drawLabels(svg, render, zero) {
             if (zero[j] <= 0) {
                 score -= 500;
             }
-            if (v[0] + sx/2 > 0.5 * zero.mesh.extent.width) {
+            if (v[0] + sx/2 > 0.5 * zero.mesh.config.extent.width) {
                 score -= 50000;
             }
-            if (v[0] - sx/2 < -0.5 * zero.mesh.extent.width) {
+            if (v[0] - sx/2 < -0.5 * zero.mesh.config.extent.width) {
                 score -= 50000;
             }
-            if (v[1] > 0.5 * zero.mesh.extent.height) {
+            if (v[1] > 0.5 * zero.mesh.config.extent.height) {
                 score -= 50000;
             }
-            if (v[1] - sy < -0.5 * zero.mesh.extent.height) {
+            if (v[1] - sy < -0.5 * zero.mesh.config.extent.height) {
                 score -= 50000;
             }
             if (score > bestscore) {
