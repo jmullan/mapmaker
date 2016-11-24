@@ -1169,7 +1169,7 @@ function generateRandomHeightmap(zero) {
     h = relax(h);
     h = setSeaLevel(h, randBetween(0.2, 0.6));
     h = add(h, mountains(zero.mesh, 2));
-    h = add(h, mountains(zero.mesh, 2, 0.05, -2));
+    h = add(h, mountains(zero.mesh, 2, 0.02, -0.5));
     h = relax(h);
     h = fillSinks(h);
     h = add(h, mountains(zero.mesh, 1));

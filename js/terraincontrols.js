@@ -1,5 +1,5 @@
 var defaults = {
-    pointCount: 32000,
+    pointCount: 64000,
     extent: {
         width: 1,
         height: 1
@@ -175,7 +175,8 @@ heightControls.append("button")
 heightControls.append("button")
     .text("Add blob")
     .on("click", function () {
-        primZero = add(primZero, mountains(primZero.mesh, 1, 0.05, 1));
+        primZero = add(primZero, mountains(
+            primZero.mesh, 1, randBetween(0.02, 0.10), randBetween(0.01, 1)));
         cityRender = new CityRender(primZero)
         primDraw();
     });
@@ -183,7 +184,8 @@ heightControls.append("button")
 heightControls.append("button")
     .text("Add scoop")
     .on("click", function () {
-        primZero = add(primZero, mountains(primZero.mesh, 1, 0.05, -1));
+        primZero = add(primZero, mountains(
+            primZero.mesh, 1, 0.05, -randBetween(0.01, 1)));
         cityRender = new CityRender(primZero)
         primDraw();
     });
