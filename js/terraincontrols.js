@@ -1,5 +1,5 @@
 var defaults = {
-    pointCount: 64000,
+    pointCount: 640,
     extent: {
         width: 1,
         height: 1
@@ -16,6 +16,7 @@ var defaults = {
 var primDiv = d3.select("#prim");
 
 var pointsControls = d3.select("#pointsControls");
+
 var heightControls = d3.select("#heightControls");
 var viewControls = d3.select("#viewControls");
 
@@ -79,7 +80,7 @@ function primDraw() {
     } else if (viewMode == "heightmap") {
         visualizeVoronoi(primSVG, primZero);
     } else if (viewMode == "waterDepth") {
-        visualizeVoronoi(primSVG, getWaterDepth(primZero), 0, 1);
+        visualizeVoronoi(primSVG, getWaterDepth(primZero), 0, 2);
     } else if (viewMode == "nothing") {
         primSVG.selectAll("path.field").remove();
     }
@@ -112,6 +113,22 @@ function primDraw() {
 
     drawLabels(primSVG, cityRender, primZero);
 }
+
+
+
+
+pointsControls.append("input")
+    .attr("type", "range")
+    .attr("id", "pointsCount")
+    .attr("value", defaults.pointCount)
+    .attr("min", 100)
+    .attr("max", 64000)
+    .on("change", function () {
+        defaults.pointCount = this.value;
+        primZero = flatten(generateGoodMesh(defaults));
+        cityRender = new CityRender(primZero)
+        primDraw();
+    });
 
 pointsControls.append("button")
     .text("Generate random points")
@@ -226,6 +243,14 @@ heightControls.append("button")
     .text("Erode")
     .on("click", function () {
         primZero = doErosion(primZero, 0.1);
+        cityRender = new CityRender(primZero)
+        primDraw();
+    });
+
+heightControls.append("button")
+    .text("Roughen")
+    .on("click", function () {
+        primZero = roughen(primZero, 1000, 0.25);
         cityRender = new CityRender(primZero)
         primDraw();
     });
