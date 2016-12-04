@@ -636,7 +636,7 @@ function bell(center, width) {
     return ((Math.random() * Math.random() * width * updown) + center);
 }
 
-function roughen(heights, expected_points, density) {
+function roughen(heights, sections, density) {
     var i,
         selected_points = [],
         new_heights = [],
@@ -645,19 +645,26 @@ function roughen(heights, expected_points, density) {
         p,
         site,
         closeness,
+        diagonal = 0,
         scaleVector = [
             heights.mesh.points.config.extent.width,
             heights.mesh.points.config.extent.height
         ];
+    diagonal = Math.sqrt((scaleVector[0] * scaleVector[0]) +
+                         (scaleVector[1] * scaleVector[1]))
 
     selected_points.config = heights.mesh.points.config;
-    for (i = 0; i < expected_points; i++) {
-        // selected_points.push(scaleByVector(randomVector(1), scaleVector));
-        selected_points.push(
-            heights.mesh.vxs[Math.floor(Math.random() * heights.length)]
-        );
+
+    // selected_points.push(scaleByVector(scaleVector, [-1, -1]));
+    // new_heights.push(0);
+
+    for (i = 0; i < sections; i++) {
+        selected_points.push(scaleByVector(randomVector(1), scaleVector));
+        // selected_points.push(
+        //      heights.mesh.vxs[Math.floor(Math.random() * heights.length)]
+        //);
         if (Math.random() < density) {
-            new_heights.push(bell(0, 10));
+            new_heights.push(bell(0, 100 / density));
         } else {
             new_heights.push(0);
         }
@@ -665,15 +672,45 @@ function roughen(heights, expected_points, density) {
     plates_voronoi = voronoi(selected_points);
     for (i = 0; i < heights.length; i++) {
         p = heights.mesh.vxs[i];
-        site = plates_voronoi.find(p[0], p[1]);
+        site = bestCell(plates_voronoi, p[0], p[1], 100);
         closeness = Math.sqrt(
             (p[0] - site[0]) * (p[0] - site[0]) +
                 (p[1] - site[1]) * (p[1] - site[1])
         );
-        newheight = new_heights[site.index];
-        heights[i] = heights[i] + newheight * closeness;
+        newheight = new_heights[site.index] / diagonal * closeness;
+        heights[i] = heights[i] + newheight;
     }
     return heights;
+}
+
+function bestCell(voronoi, x, y, radius) {
+    var that = voronoi,
+        cell,
+        closest = null,
+        d2 = (radius * radius) || null,
+        dx,
+        dy,
+        i = voronoi._found || 0;
+
+    for (i; i < that.cells.length; i++) {
+        cell = that.cells[i];
+        if (cell) {
+            cell.halfedges.forEach(function(e) {
+                var edge = that.edges[e], v = edge.left;
+                if ((v === cell.site || !v) && !(v = edge.right)) {
+                    return;
+                }
+                var vx = x - v[0],
+                    vy = y - v[1],
+                    v2 = vx * vx + vy * vy;
+                if (d2 === null || v2 < d2) {
+                    closest = cell;
+                    d2 = v2;
+                }
+            });
+        }
+    }
+    return radius == null || d2 <= radius * radius ? closest.site : null;
 }
 
 function setSeaLevel(points, q) {

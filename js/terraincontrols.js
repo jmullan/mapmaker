@@ -80,7 +80,7 @@ function primDraw() {
     } else if (viewMode == "heightmap") {
         visualizeVoronoi(primSVG, primZero);
     } else if (viewMode == "waterDepth") {
-        visualizeVoronoi(primSVG, getWaterDepth(primZero), 0, 2);
+        visualizeVoronoi(primSVG, getWaterDepth(primZero), 0, 1, ["#a0d6b4", "#4169e1"]);
     } else if (viewMode == "nothing") {
         primSVG.selectAll("path.field").remove();
     }
@@ -250,7 +250,10 @@ heightControls.append("button")
 heightControls.append("button")
     .text("Roughen")
     .on("click", function () {
-        primZero = roughen(primZero, 1000, 0.25);
+        primZero = roughen(primZero, 20, 0.1);
+        primZero = roughen(primZero, 100, 0.2);
+        primZero = roughen(primZero, 1000, 0.4);
+        primZero = doErosion(primZero, 0.1);
         cityRender = new CityRender(primZero)
         primDraw();
     });

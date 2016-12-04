@@ -10,12 +10,17 @@ function visualizePoints(svg, points) {
 }
 
 
-function visualizeField(className, svg, field, lo, hi) {
+function visualizeField(className, svg, field, lo, hi, colors) {
+    var colorRamp;
     if (hi == undefined) {
         hi = d3.max(field) + 1e-9;
     }
     if (lo == undefined) {
         lo = d3.min(field) - 1e-9;
+    }
+    if (colors !== undefined) {
+        console.log(colors);
+        colorRamp = d3.scaleLinear().domain([lo, hi]).range(colors);
     }
     var mappedvals = field.map(
         function (x) {
@@ -41,7 +46,11 @@ function visualizeField(className, svg, field, lo, hi) {
             if (mappedvals[i] == 0) {
                 return 'transparent';
             }
-            return d3.interpolateViridis(mappedvals[i]);
+            if (colors !== undefined) {
+                return colorRamp(mappedvals[i]);
+            } else {
+                return d3.interpolateViridis(mappedvals[i]);
+            }
         })
         .on("click",
             function (datum, index) {
@@ -163,8 +172,8 @@ function visualizeCities(svg, render, zero) {
         .raise();
 }
 
-function visualizeVoronoi(svg, field, lo, hi) {
-    visualizeField('field', svg, field, lo, hi);
+function visualizeVoronoi(svg, field, lo, hi, colors) {
+    visualizeField('field', svg, field, lo, hi, colors);
 }
 
 
