@@ -714,12 +714,16 @@ function bestCell(voronoi, x, y, radius) {
 }
 
 function setSeaLevel(points, q) {
-    var newh = flatten(points.mesh);
+    // var newh = flatten(points.mesh);
     var delta = quantile(points, q);
+    return flood(points, -delta);
+}
+
+function flood(points, depth) {
     for (var i = 0; i < points.length; i++) {
-        newh[i] = points[i] - delta;
+        points[i] = points[i] + depth;
     }
-    return newh;
+    return points;
 }
 
 function cleanCoast(h, iters) {
