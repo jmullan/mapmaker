@@ -19,17 +19,17 @@ function visualizeField(className, svg, field, lo, hi, colors) {
         lo = d3.min(field) - 1e-9;
     }
     if (colors !== undefined) {
-        console.log(colors);
+        console.log([lo, hi, colors[0], colors[1]]);
         colorRamp = d3.scaleLinear().domain([lo, hi]).range(colors);
     }
     var mappedvals = field.map(
         function (x) {
             if (x > hi) {
-                return 1;
+                return hi;
             } else if (x < lo) {
                 return 0;
             } else {
-                return (x - lo) / (hi - lo)
+                return x;
             }
         });
     var tris = svg.selectAll('path.' + className).data(field.mesh.triangles)
@@ -91,8 +91,8 @@ function visualizeSlopes(svg, zero) {
         var s2 = 0;
         for (var j = 0; j < nbs.length; j++) {
             var slopes = getSlopeVectors(zero, nbs[j]);
-            s += slopes[0] / 10;
-            s2 += slopes[1];
+            s += slopes[0] / 10 / 10000;
+            s2 += slopes[1] / 10000;
         }
         s /= nbs.length;
         s2 /= nbs.length;
@@ -107,7 +107,7 @@ function visualizeSlopes(svg, zero) {
         );
         var x = zero.mesh.vxs[i][0];
         var y = zero.mesh.vxs[i][1];
-        if (Math.abs(l*s) > 2 * r) {
+        if (Math.abs(l * s) > 2 * r) {
             var n = Math.floor(Math.abs(l * s / r));
             l /= n;
             if (n > 4) n = 4;

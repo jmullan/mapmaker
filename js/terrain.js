@@ -1,5 +1,9 @@
 "use strict";
 
+var INF = 99999999,
+    MAX_HEIGHT = 9000,
+    MIN_HEIGHT = -11000;
+
 function randBetween(lo, hi) {
     // Get a random number between two values
     return lo + (Math.random() * (hi - lo));
@@ -54,6 +58,16 @@ function validatePoints(points) {
     console.assert(points.length);
     console.assert(points[0], points);
     console.assert(points[0][0]);
+}
+
+function validateHeights(h) {
+    for (var i = 0; i < h.length; i++) {
+        if (h[i] === undefined || h[i] === null || isNaN(h[i])) {
+            console.log([i, h[i]]);
+            console.assert(h[i]);
+            break;
+        }
+    }
 }
 
 function getImprovedPoints(points) {
@@ -174,10 +188,52 @@ function getNeighbors(mesh, i) {
     return nbs;
 }
 
-function distance(mesh, i, j) {
+function mesh_distance(mesh, i, j) {
     var p = mesh.vxs[i];
     var q = mesh.vxs[j];
+    return distance(p, q);
+}
+
+function distance(p, q) {
     return Math.sqrt((p[0] - q[0]) * (p[0] - q[0]) + (p[1] - q[1]) * (p[1] - q[1]));
+}
+
+function getSlopes(h) {
+    // map input points to the amount of slope per point
+    var dh = getDownhills(h);
+    var slopes = flatten(h.mesh);
+    var slopeVectors;
+    for (var i = 0; i < h.length; i++) {
+        slopeVectors = getSlopeVectors(h, i);
+        slopes[i] = Math.sqrt(
+            slopeVectors[0] * slopeVectors[0] +
+                slopeVectors[1] * slopeVectors[1]);
+    }
+    return slopes;
+}
+
+function getSlopeVectors(heights, i) {
+    var nbs = getNeighbors(heights.mesh, i);
+    if (nbs.length != 3) {
+        return [0, 0];
+    }
+    var p0 = heights.mesh.vxs[nbs[0]];
+    var p1 = heights.mesh.vxs[nbs[1]];
+    var p2 = heights.mesh.vxs[nbs[2]];
+
+    var x1 = p1[0] - p0[0];
+    var x2 = p2[0] - p0[0];
+    var y1 = p1[1] - p0[1];
+    var y2 = p2[1] - p0[1];
+
+    var det = x1 * y2 - x2 * y1;
+    var d1 = heights[nbs[1]] - heights[nbs[0]];
+    var d2 = heights[nbs[2]] - heights[nbs[0]];
+
+    return [
+        (y2 * d1 - y1 * d2) / det,
+        (-x2 * d1 + x1 * d2) / det
+    ];
 }
 
 function quantile(points, q) {
@@ -221,13 +277,31 @@ function map(h, f) {
 }
 
 function normalize(h) {
-    var lo = d3.min(h);
-    var hi = d3.max(h);
-    return map(h, function (x) {return (x - lo) / (hi - lo)});
+    var lo = d3.min(h),
+        hi = d3.max(h),
+        newh = flatten(h.mesh),
+        range = MAX_HEIGHT - MIN_HEIGHT,
+        i;
+    for (i = 0; i < h.length; i++) {
+        newh[i] = ((h[i] - lo) / (hi - lo) * range) + MIN_HEIGHT;
+    };
+    return newh;
 }
 
 function peaky(h) {
-    return map(normalize(h), Math.sqrt);
+    var lo = d3.min(h),
+        hi = d3.max(h),
+        newh = flatten(h.mesh),
+        range = MAX_HEIGHT - MIN_HEIGHT,
+        i;
+    for (i = 0; i < h.length; i++) {
+        newh[i] = Math.sqrt((h[i] - MIN_HEIGHT) / range);
+        newh[i] = ((h[i] - lo) / (hi - lo) * range) + MIN_HEIGHT;
+    };
+    for (i = 0; i < h.length; i++) {
+
+    }
+    return newh;
 }
 
 function add() {
@@ -319,6 +393,15 @@ function getWaterDepth(elevations) {
 
     var i;
 
+    /*
+    for (i = 0; i < elevations.length; i++) {
+        idxs[i] = i;
+        if (elevations[i] > 0) {
+            flux[i] = 1 / surfacePointCount;
+        }
+    }
+    idxs.sort(by(points, false));
+    */
     for (i = 0; i < elevations.length; i++) {
         // find obvious local minima and catchments
         water.minima[i] = null;
@@ -475,6 +558,15 @@ function getWaterDepth(elevations) {
         }
     );
 
+    for (i = 0; i < elevations.length; i++) {
+        if (elevations[i] > 0 && water[i] <= 0.1) {
+            water[i] = 0;
+        }
+        if (elevations[i] <= 0 && water[i] <= 0) {
+            water[i] = 1;
+        }
+    }
+
     var endTime = new Date();
     var timeDiff = endTime - startTime;
     timeDiff /= 1000;
@@ -501,124 +593,180 @@ function getFlux(points) {
         if (downhills[j] != j) {
             if (points[j] >= 0) {
                 flux[downhills[j]] += flux[j];
-            } else {
-                flux[j] = flux[j] / 9;
-                // flux[downhills[j]] += flux[j];
             }
-        } else {
-
         }
     }
     return flux;
 }
 
-
-function getSlope(h) {
-    // map input points to the amount of slope per point
-    var dh = getDownhills(h);
-    var slope = flatten(h.mesh);
-    for (var i = 0; i < h.length; i++) {
-        var s = getSlopeVectors(h, i);
-        slope[i] = Math.sqrt(s[0] * s[0] + s[1] * s[1]);
-    }
-    return slope;
-}
-
-function erosionRate(h) {
-    var flux = getFlux(h);
-    var slope = getSlope(h);
-    var newh = flatten(h.mesh);
-    for (var i = 0; i < h.length; i++) {
-        if (h[i] > 0) {
-            newh[i] = flux[i] + slope[i];
-        }
-    }
-    return newh;
-}
-
-function fillSinks(h, epsilon) {
-    epsilon = epsilon || 1e-5;
-    var infinity = 999999;
-    var newh = flatten(h.mesh);
-    for (var i = 0; i < h.length; i++) {
+function fillSinks(h) {
+    // everything must be epsilon amount higher than at least one of its
+    // neighbors, unless it is at the edge
+    var newh = flatten(h.mesh),
+        i,
+        j,
+        epsilon = 10,
+        indexes = [],
+        index = 0,
+        epsilon_height,
+        changed = true,
+        max_height = -INF;;
+    for (i = 0; i < h.length; i++) {
+        indexes[i] = i;
         if (isNearEdge(h.mesh, i)) {
             newh[i] = h[i];
         } else {
-            newh[i] = infinity;
+            newh[i] = INF;
         }
     }
-    var changed = true;
+    indexes.sort(by(h, false));
     while (changed) {
         changed = false;
-        for (var i = 0; i < h.length; i++) {
+        for (index = 0; index < indexes.length; index++) {
+            i = indexes[index];
             if (newh[i] == h[i]) {
                 continue;
             }
             var nbs = getNeighbors(h.mesh, i);
-            for (var j = 0; j < nbs.length; j++) {
-                if (h[i] >= newh[nbs[j]] + epsilon) {
+            for (j = 0; j < nbs.length; j++) {
+                epsilon_height = newh[nbs[j]] + epsilon;
+                if (h[i] >= epsilon_height) {
+                    // if the existing height is greater than any neighbor plus
+                    // an epsilon, use that
                     newh[i] = h[i];
                     changed = true;
                     break;
                 }
-                var oh = newh[nbs[j]] + epsilon;
-                if ((newh[i] > oh) && (oh > h[i])) {
-                    newh[i] = oh;
+                if ((newh[i] > epsilon_height) && (epsilon_height > h[i])) {
+                    // if the new height is greater than the neighbor plus an
+                    // epsilon, but the neighbor plus epsilon is already
+                    // higher than the original site, use the neighbor plus
+                    // epsilon
+                    newh[i] = epsilon_height;
                     changed = true;
                 }
             }
         }
     }
+    for (i = 0; i < newh.length; i++) {
+        if (newh[i] > max_height && newh[i] < INF) {
+            max_height = newh[i];
+        }
+    }
+    for (i = 0; i < newh.length; i++) {
+        if (newh[i] >= INF) {
+            // newh[i] = max_height;
+        }
+    }
     return newh;
 }
 
-function erode(h, amount) {
-    var er = erosionRate(h);
-    var newh = flatten(h.mesh);
-    var maxr = d3.max(er);
-    var j;
-    var gunk;
-    var gunkOut;
-    for (var i = 0; i < h.length; i++) {
-        if (!h.mesh.gunks[i]) {
-            h.mesh.gunks[i] = 0;
+function getErosionRate(h, slopes) {
+    var flux = getFlux(h),
+        erosion = flatten(h.mesh),
+        max_slope = -INF,
+        i;
+    for (i = 0; i < h.length; i++) {
+        if (h[i] > 0 && slopes[i] > max_slope) {
+            max_slope = slopes[i];
         }
-        gunkOut = h.mesh.gunks[i] * (er[i] / maxr);
-        h.mesh.gunks[i] -= gunkOut;
+    }
+    for (i = 0; max_slope > 0 && i < h.length; i++) {
+        if (h[i] > 0 && slopes[i]) {
+            erosion[i] = slopes[i] / max_slope;
+        }
+    }
+    validateHeights(erosion);
+    return erosion;
+}
 
-        newh[i] = h[i] - amount * (er[i] / maxr);
-        gunkOut += h[i] - newh[i];
+function erode(h, amount) {
+    var slopes = getSlopes(h),
+        erosionRate = getErosionRate(h, slopes),
+        max_r = d3.max(erosionRate) || 1,
+        downhills = getDownhills(h),
+        max_slope = 0,
+        newh = flatten(h.mesh),
+        i,
+        j,
+        k,
+        gunk,
+        gunkOut,
+        lowerNeighbors,
+        neighbor,
+        neighborSlope,
+        idxs = [];
 
+    for (i = 0; i < h.length; i++) {
+        idxs[i] = i;
+        newh[i] = h[i] - amount * erosionRate[i];
+        h.mesh.gunks[i] = h[i] - newh[i];
+
+        if (slopes[i] > max_slope) {
+            max_slope = slopes[i];
+        }
+    }
+    validateHeights(h.mesh.gunks);
+    idxs.sort(by(h, false));
+    for (k = 0; k < idxs.length; k++) {
+        i = idxs[k];
         newh[i] += h.mesh.gunks[i];
         h.mesh.gunks[i] = 0;
-
-        var nbrs = getNeighbors(h.mesh, i);
-        var lowerNeighbors = [];
-        for (j = 0; j < nbrs.length; j++) {
-            if (h[nbrs[j]] < h[i]) {
-                lowerNeighbors.push(nbrs[j]);
-            }
+        lowerNeighbors = getLowerNeighbors(h, i);
+        neighborSlope = 0;
+        for (j = 0; j < lowerNeighbors.length; j++) {
+            neighbor = lowerNeighbors[j];
+            neighborSlope += slopes[neighbor];
         }
-        if (lowerNeighbors.length) {
-            gunk = gunkOut / lowerNeighbors.length;
-            for (j = 0; j < lowerNeighbors.length; j++) {
-                h.mesh.gunks[lowerNeighbors[j]] += gunk;
-                h.mesh.gunks[i] -= gunk;
+        gunkOut = h.mesh.gunks[i];
+        for (j = 0; j < lowerNeighbors.length; j++) {
+            neighbor = lowerNeighbors[j];
+            if (neighborSlope === 0 || slopes[neighbor] === 0) {
+                gunk = gunkOut / lowerNeighbors.length;
+            } else {
+                gunk = gunkOut / slopes[neighbor] / neighborSlope;
             }
+            h.mesh.gunks[neighbor] += gunk;
+            h.mesh.gunks[i] -= gunk;
         }
         if (gunkOut) {
             newh[i] += gunkOut;
         }
     }
+    validateHeights(h.mesh.gunks);
+    validateHeights(newh);
     return newh;
+}
+
+function previewErode(h) {
+    var deltas = flatten(h.mesh),
+        eroded = erode(h, 0.1),
+        i;
+    for (i = 0; i < h.length; i++) {
+        deltas[i] = eroded[i] - h[i];
+    }
+    validateHeights(deltas);
+    return deltas;
+}
+
+function getLowerNeighbors(h, i) {
+    var j,
+        nbrs = getNeighbors(h.mesh, i),
+        lowerNeighbors = [];
+    for (j = 0; j < nbrs.length; j++) {
+        if (h[nbrs[j]] < h[i]) {
+            lowerNeighbors.push(nbrs[j]);
+        }
+    }
+    return lowerNeighbors;
 }
 
 function doErosion(h, amount, n) {
     n = n || 1;
-    h = fillSinks(h);
+    // h = fillSinks(h);
     for (var i = 0; i < n; i++) {
         h = erode(h, amount);
-        h = fillSinks(h);
+        // h = fillSinks(h);
     }
     return h;
 }
@@ -641,9 +789,11 @@ function roughen(heights, sections, density) {
         selected_points = [],
         new_heights = [],
         newheight = 0,
-        plates_voronoi,
+        plates_diagram,
         p,
-        site,
+        cell,
+        neighbor,
+        neighbor_closeness,
         closeness,
         diagonal = 0,
         scaleVector = [
@@ -655,62 +805,78 @@ function roughen(heights, sections, density) {
 
     selected_points.config = heights.mesh.points.config;
 
-    // selected_points.push(scaleByVector(scaleVector, [-1, -1]));
-    // new_heights.push(0);
-
     for (i = 0; i < sections; i++) {
         selected_points.push(scaleByVector(randomVector(1), scaleVector));
-        // selected_points.push(
-        //      heights.mesh.vxs[Math.floor(Math.random() * heights.length)]
-        //);
         if (Math.random() < density) {
-            new_heights.push(bell(0, 100 / density));
+            new_heights.push(bell(0, 1000 / density));
         } else {
             new_heights.push(0);
         }
     }
-    plates_voronoi = voronoi(selected_points);
+    plates_diagram = voronoi(selected_points);
     for (i = 0; i < heights.length; i++) {
         p = heights.mesh.vxs[i];
-        site = bestCell(plates_voronoi, p[0], p[1], 100);
-        closeness = Math.sqrt(
-            (p[0] - site[0]) * (p[0] - site[0]) +
-                (p[1] - site[1]) * (p[1] - site[1])
-        );
-        newheight = new_heights[site.index] / diagonal * closeness;
+        cell = bestCell(plates_diagram, p[0], p[1], 100);
+        if (cell && cell.site) {
+            closeness = distance(p, cell.site);
+            neighbor = neighboring_cell(plates_diagram, p, cell);
+            if (neighbor && neighbor.site) {
+                neighbor_closeness = distance(p, neighbor.site);
+                newheight = ((
+                    (new_heights[cell.site.index] * closeness) +
+                        (new_heights[neighbor.site.index] * neighbor_closeness)
+                ) / (closeness + neighbor_closeness));
+
+            } else {
+                newheight = new_heights[cell.site.index] / diagonal * closeness;
+            }
+        } else {
+            newheight = 0;
+        }
         heights[i] = heights[i] + newheight;
     }
     return heights;
 }
 
-function bestCell(voronoi, x, y, radius) {
-    var that = voronoi,
-        cell,
+function neighboring_cell(diagram, p, cell) {
+    var closest = null,
+        d2 = null;
+    if (cell) {
+        cell.halfedges.forEach(function(e) {
+            var edge = diagram.edges[e],
+                v = edge.left;
+            if ((v === cell.site || !v) && !(v = edge.right)) {
+                return;
+            }
+            var v2 = distance(p, v);
+            if (d2 === null || v2 < d2) {
+                closest = cell;
+                d2 = v2;
+            }
+        });
+    }
+    return closest;
+}
+
+function bestCell(diagram, x, y, radius) {
+    var cell,
         closest = null,
         d2 = (radius * radius) || null,
         dx,
         dy,
-        i = voronoi._found || 0;
+        i = diagram._found || 0;
 
-    for (i; i < that.cells.length; i++) {
-        cell = that.cells[i];
+    for (i; i < diagram.cells.length; i++) {
+        cell = diagram.cells[i];
         if (cell) {
-            cell.halfedges.forEach(function(e) {
-                var edge = that.edges[e], v = edge.left;
-                if ((v === cell.site || !v) && !(v = edge.right)) {
-                    return;
-                }
-                var vx = x - v[0],
-                    vy = y - v[1],
-                    v2 = vx * vx + vy * vy;
-                if (d2 === null || v2 < d2) {
-                    closest = cell;
-                    d2 = v2;
-                }
-            });
+            var v2 = distance([x, y], cell.site);
+            if (d2 === null || v2 < d2) {
+                closest = cell;
+                d2 = v2;
+            }
         }
     }
-    return radius == null || d2 <= radius * radius ? closest.site : null;
+    return radius == null || d2 <= radius * radius ? closest : null;
 }
 
 function setSeaLevel(points, q) {
@@ -735,7 +901,7 @@ function cleanCoast(h, iters) {
             var nbs = getNeighbors(h.mesh, i);
             if (h[i] <= 0 || nbs.length != 3) continue;
             var count = 0;
-            var best = -999999;
+            var best = -INF;
             for (var j = 0; j < nbs.length; j++) {
                 if (h[nbs[j]] > 0) {
                     count++;
@@ -754,7 +920,7 @@ function cleanCoast(h, iters) {
             var nbs = getNeighbors(h.mesh, i);
             if (h[i] > 0 || nbs.length != 3) continue;
             var count = 0;
-            var best = 999999;
+            var best = INF;
             for (var j = 0; j < nbs.length; j++) {
                 if (h[nbs[j]] <= 0) {
                     count++;
@@ -771,41 +937,17 @@ function cleanCoast(h, iters) {
     return h;
 }
 
-function getSlopeVectors(zero, i) {
-    var nbs = getNeighbors(zero.mesh, i);
-    if (nbs.length != 3) {
-        return [0, 0];
-    }
-    var p0 = zero.mesh.vxs[nbs[0]];
-    var p1 = zero.mesh.vxs[nbs[1]];
-    var p2 = zero.mesh.vxs[nbs[2]];
-
-    var x1 = p1[0] - p0[0];
-    var x2 = p2[0] - p0[0];
-    var y1 = p1[1] - p0[1];
-    var y2 = p2[1] - p0[1];
-
-    var det = x1 * y2 - x2 * y1;
-    var h1 = zero[nbs[1]] - zero[nbs[0]];
-    var h2 = zero[nbs[2]] - zero[nbs[0]];
-
-    return [
-        (y2 * h1 - y1 * h2) / det,
-        (-x2 * h1 + x1 * h2) / det
-    ];
-}
-
 function cityScore(cities, zero) {
     var score = map(getFlux(zero), Math.sqrt);
     for (var i = 0; i < zero.length; i++) {
         if (zero[i] <= 0 || isNearEdge(zero.mesh, i)) {
-            score[i] = -999999;
+            score[i] = -INF;
             continue;
         }
         score[i] += 0.01 / (1e-9 + Math.abs(zero.mesh.vxs[i][0]) - zero.mesh.config.extent.width/2)
         score[i] += 0.01 / (1e-9 + Math.abs(zero.mesh.vxs[i][1]) - zero.mesh.config.extent.height/2)
         for (var j = 0; j < cities.length; j++) {
-            score[i] -= 0.02 / (distance(zero.mesh, cities[j], i) + 1e-9);
+            score[i] -= 0.02 / (mesh_distance(zero.mesh, cities[j], i) + 1e-9);
         }
     }
     return score;
@@ -891,7 +1033,7 @@ function getTerritories(render, zero) {
     var terr = [];
     var queue = new PriorityQueue({comparator: function (a, b) {return a.score - b.score}});
     function weight(u, v) {
-        var horiz = distance(zero.mesh, u, v);
+        var horiz = mesh_distance(zero.mesh, u, v);
         var vert = zero[v] - zero[u];
         if (vert > 0) vert /= 10;
         var diff = 1 + 0.25 * Math.pow(vert/horiz, 2);
@@ -1084,19 +1226,27 @@ function generateRandomHeightmap(zero) {
         h = relax(h);
     }
     h = roughen(h, 100, 0.25);
+    validateHeights(h);
     h = peaky(h);
+    validateHeights(h);
     h = add(h, mountains(zero.mesh, 4));
+    validateHeights(h);
     h = relax(h);
+    validateHeights(h);
     h = doErosion(h, randBetween(0, 0.1), 5);
+    validateHeights(h);
     h = add(h, mountains(zero.mesh, 3));
+    validateHeights(h);
     h = relax(h);
+    validateHeights(h);
     h = roughen(h, 100, 0.25);
+    validateHeights(h);
     h = doErosion(h, randBetween(0, 0.1), 5);
     h = setSeaLevel(h, randBetween(0.2, 0.6));
     h = add(h, mountains(zero.mesh, 2));
     h = add(h, mountains(zero.mesh, 2, 0.02, -0.5));
     h = relax(h);
-    h = fillSinks(h);
+    // h = fillSinks(h);
     h = add(h, mountains(zero.mesh, 1));
     h = cleanCoast(h, 3);
     return h;

@@ -69,18 +69,23 @@ function primDraw() {
     if (viewMode == "flux") {
         visualizeVoronoi(primSVG, getFlux(primZero));
     } else if (viewMode == "slope") {
-        visualizeVoronoi(primSVG, getSlope(primZero));
+        visualizeVoronoi(primSVG, getSlopes(primZero));
     } else if (viewMode == "cityViewScore") {
         var score = cityScore(cityRender.cities, primZero);
         visualizeVoronoi(primSVG, score, d3.max(score) - 0.5);
     } else if (viewMode == "territories") {
         visualizeVoronoi(primSVG, cityRender.terr);
     } else if (viewMode == "erodeViewRate") {
-        visualizeVoronoi(primSVG, erosionRate(primZero));
+        visualizeVoronoi(
+            primSVG, getErosionRate(primZero, getSlopes(primZero)));
+    } else if (viewMode == "erodePreview") {
+        visualizeVoronoi(primSVG, previewErode(primZero));
     } else if (viewMode == "heightmap") {
         visualizeVoronoi(primSVG, primZero);
     } else if (viewMode == "waterDepth") {
-        visualizeVoronoi(primSVG, getWaterDepth(primZero), 0, 1, ["#a0d6b4", "#4169e1"]);
+        visualizeVoronoi(
+            primSVG, getWaterDepth(primZero), 0, 10000, ["#4169e1", "#000033"]
+        );
     } else if (viewMode == "nothing") {
         primSVG.selectAll("path.field").remove();
     }
@@ -176,7 +181,7 @@ heightControls.append("button")
 heightControls.append("button")
     .text("Add cone")
     .on("click", function () {
-        primZero = add(primZero, cone(primZero.mesh, -0.5));
+        primZero = add(primZero, cone(primZero.mesh, -500));
         cityRender = new CityRender(primZero)
         primDraw();
     });
@@ -184,7 +189,7 @@ heightControls.append("button")
 heightControls.append("button")
     .text("Add inverted cone")
     .on("click", function () {
-        primZero = add(primZero, cone(primZero.mesh, 0.5));
+        primZero = add(primZero, cone(primZero.mesh, 500));
         cityRender = new CityRender(primZero)
         primDraw();
     });
@@ -193,7 +198,7 @@ heightControls.append("button")
     .text("Add blob")
     .on("click", function () {
         primZero = add(primZero, mountains(
-            primZero.mesh, 1, randBetween(0.02, 0.10), randBetween(0.01, 1)));
+            primZero.mesh, 1, randBetween(0.02, 0.10), randBetween(100, 1000)));
         cityRender = new CityRender(primZero)
         primDraw();
     });
@@ -202,7 +207,7 @@ heightControls.append("button")
     .text("Add scoop")
     .on("click", function () {
         primZero = add(primZero, mountains(
-            primZero.mesh, 1, 0.05, -randBetween(0.01, 1)));
+            primZero.mesh, 1, 0.05, -randBetween(50, 500)));
         cityRender = new CityRender(primZero)
         primDraw();
     });
@@ -240,6 +245,22 @@ heightControls.append("button")
     });
 
 heightControls.append("button")
+    .text("Raise sea level")
+    .on("click", function () {
+        primZero = flood(primZero, -10);
+        cityRender = new CityRender(primZero)
+        primDraw();
+    });
+
+heightControls.append("button")
+    .text("Lower sea level")
+    .on("click", function () {
+        primZero = flood(primZero, 10);
+        cityRender = new CityRender(primZero)
+        primDraw();
+    });
+
+heightControls.append("button")
     .text("Erode")
     .on("click", function () {
         primZero = doErosion(primZero, 0.1);
@@ -271,6 +292,7 @@ var modes = {
     "nothing": "None",
     "heightmap": "Heightmap",
     "erodeViewRate": "Erosion Rate",
+    "erodePreview": "Erosion Preview",
     "cityViewScore": "City Scoring",
     "territories": "Territories",
     "flux": "Flux",
@@ -305,7 +327,6 @@ addSelectBox(
 addCheckbox(viewControls, "showCoast", "Coastlines", true, primDraw);
 addCheckbox(viewControls, "showRivers", "Rivers", true, primDraw);
 addCheckbox(viewControls, "showSlopes", "Slope shading", true, primDraw);
-addCheckbox(viewControls, "showWater", "Water", false, primDraw);
 
 primDiv.append("button")
     .text("Add new city")
