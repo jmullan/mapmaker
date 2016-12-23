@@ -392,16 +392,11 @@ function getWaterDepth(elevations) {
     var catchments = [];
 
     var i;
+    var indexes = [];
+    var index;
 
-    /*
-    for (i = 0; i < elevations.length; i++) {
-        idxs[i] = i;
-        if (elevations[i] > 0) {
-            flux[i] = 1 / surfacePointCount;
-        }
-    }
-    idxs.sort(by(points, false));
-    */
+    var toCheck = [];
+
     for (i = 0; i < elevations.length; i++) {
         // find obvious local minima and catchments
         water.minima[i] = null;
@@ -432,13 +427,7 @@ function getWaterDepth(elevations) {
                 nodes: [i]
             };
             catchments.push(i);
-        }
-    }
-
-    var toCheck = [];
-    for (i = 0; i < elevations.length; i++) {
-        // find nodes with no minimum
-        if (water.minima[i] === null) {
+        } else {
             toCheck.push(i);
         }
     }
@@ -469,101 +458,18 @@ function getWaterDepth(elevations) {
     var catchment;
     var neighbors;
     var neighbor;
-    while (catchments.length) {
-        // now we want to try to merge adjascent catchments
-        // with the same height
 
-        catchment = catchments.pop();
-        if (water.minima[catchment] !== catchment) {
-            // This was claimed by another catchment, so ignore
-            continue;
-        }
-
-        neighbors = getNeighbors(elevations.mesh, catchment);
-        for (i = 0; i < neighbors.length; i++) {
-            neighbor = neighbors[i];
-            if (
-                elevations[catchment] == elevations[neighbor] &&
-                    water.minima[neighbor] == neighbor
-            ) {
-
-                // We have found a catchment next to a catchment of the same
-                // height so the neighboring node should be merged in to this
-                // catchment
-                // A catchment is in its own list of nodes, so these lines
-                // aren't needed:
-                // water.minima[neighbor] = catchment;
-                // water.catchments[catchment].nodes.push(neighbor);
-
-                // if the neighbor was also a catchment, we should merge in all
-                if (water.catchments[neighbor] !== undefined) {
-                    water.catchments[neighbor].nodes.forEach(function (v) {
-                        water.minima[v] = catchment;
-                        water.catchments[catchment].nodes.push(v);
-                    });
-                    delete water.catchments[neighbor];
-                }
-            }
-        }
+    for (i = 0; i < elevations.length; i++) {
+        indexes[i] = i;
     }
-
-    // find the sill for any catchment with no sill
-    var minimum;
-    Object.keys(water.catchments).forEach(
-        function (catchment) {
-            if (water.catchments[catchment] === undefined) {
-                return
-            }
-            var data = water.catchments[catchment];
-            var neighbors;
-            var checking;
-            var neighbor;
-            var catchmentElevation = elevations[catchment];
-            var i;
-            var j;
-            var filling;
-            if (data.sill !== null) {
-                return;
-            }
-            data.nodes.sort(by(elevations, true));
-
-            for (i = 0; data.sill === null && i < data.nodes.length; i += 1) {
-                checking = data.nodes[i];
-                neighbors = getNeighbors(elevations.mesh, checking).filter(
-                    function (n) {
-                        return water.minima[n] != catchment;
-                    }
-                );
-                neighbors.sort(by(elevations, true));
-                for (j = 0; j < neighbors.length; j += 1) {
-                    neighbor = neighbors[j];
-                    data.sill = neighbor;
-                    break;
-                }
-                catchmentElevation = elevations[checking];
-            }
-            if (data.sill !== null) {
-                catchmentElevation = elevations[data.sill];
-                for (i = 0; i < data.nodes.length; i += 1) {
-                    filling = data.nodes[i];
-                    if (elevations[filling] < catchmentElevation) {
-                        water[filling] = catchmentElevation -
-                            elevations[filling];
-                    }
-                }
-            } else {
-                console.log("no sill for catchment " + catchment);
-            }
-
-        }
-    );
+    indexes.sort(by(elevations, true));
 
     for (i = 0; i < elevations.length; i++) {
         if (elevations[i] > 0 && water[i] <= 0.1) {
             water[i] = 0;
         }
-        if (elevations[i] <= 0 && water[i] <= 0) {
-            water[i] = 1;
+        if (elevations[i] < 0 && water[i] <= 0) {
+            water[i] = -elevations[i];
         }
     }
 
